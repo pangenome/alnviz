@@ -4,7 +4,12 @@ use eframe::egui;
 use std::ffi::CString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Receiver};
 use std::thread;
+
+// Wrapper to make raw pointer Send (UNSAFE but necessary for FFI)
+struct SendPtr(*mut ffi::DotPlot);
+unsafe impl Send for SendPtr {}
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
@@ -44,6 +49,7 @@ struct AlnViewApp {
 
     // Loading state
     loading: Arc<Mutex<LoadingState>>,
+    plot_receiver: Option<Receiver<Result<SendPtr, String>>>,
 
     // Interaction state
     dragging: bool,
@@ -95,6 +101,7 @@ impl Default for AlnViewApp {
             current_file: None,
             show_about: false,
             loading: Arc::new(Mutex::new(LoadingState::Idle)),
+            plot_receiver: None,
             dragging: false,
             drag_start: egui::Pos2::ZERO,
         }
@@ -119,6 +126,38 @@ impl Default for LayerSettings {
 
 impl eframe::App for AlnViewApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Check if plot loaded from background thread
+        if let Some(ref receiver) = self.plot_receiver {
+            if let Ok(result) = receiver.try_recv() {
+                match result {
+                    Ok(SendPtr(plot_ptr)) => {
+                        if let Some(safe_plot) = ffi::SafePlot::new(plot_ptr) {
+                            println!("✅ Plot loaded successfully!");
+                            self.plot = Some(safe_plot);
+                            self.num_layers = 1;
+                            self.layers = vec![LayerSettings {
+                                visible: true,
+                                name: "Alignments".to_string(),
+                                ..Default::default()
+                            }];
+                            // TODO: Get actual genome lengths
+                            self.view.max_x = 100_000_000.0;
+                            self.view.max_y = 100_000_000.0;
+                            self.reset_view();
+
+                            *self.loading.lock().unwrap() = LoadingState::Success("Loaded successfully".to_string());
+                        } else {
+                            *self.loading.lock().unwrap() = LoadingState::Failed("C returned NULL".to_string());
+                        }
+                    }
+                    Err(e) => {
+                        *self.loading.lock().unwrap() = LoadingState::Failed(e);
+                    }
+                }
+                self.plot_receiver = None;
+            }
+        }
+
         // Check loading state
         let loading_state = self.loading.lock().unwrap().clone();
         match loading_state {
@@ -474,13 +513,19 @@ impl AlnViewApp {
             }
         };
 
+        // Create channel for receiving plot
+        let (tx, rx) = channel();
+        self.plot_receiver = Some(rx);
+        self.current_file = Some(path);
+
         // Spawn background thread for loading
         thread::spawn(move || {
             println!("🧵 Background thread: Loading file...");
 
             let c_path = match CString::new(path_str.as_str()) {
                 Ok(s) => s,
-                Err(_) => {
+                Err(e) => {
+                    let _ = tx.send(Err(format!("Path contains null byte: {}", e)));
                     *loading.lock().unwrap() = LoadingState::Failed("Path contains null byte".to_string());
                     return;
                 }
@@ -501,17 +546,10 @@ impl AlnViewApp {
             println!("📞 C createPlot() returned: {:?}", plot_ptr);
 
             if plot_ptr.is_null() {
-                *loading.lock().unwrap() = LoadingState::Failed(format!(
-                    "Failed to load: {} (C returned NULL)", path_str
-                ));
+                let _ = tx.send(Err(format!("Failed to load: {} (C returned NULL)", path_str)));
             } else {
-                // TODO: We need to communicate the plot back to the main thread
-                // For now, just mark as success
-                *loading.lock().unwrap() = LoadingState::Success(format!(
-                    "Loaded: {} (but can't transfer to UI yet!)", path_str
-                ));
-                println!("⚠️  WARNING: Plot loaded in background thread but we can't transfer it to UI thread yet!");
-                println!("⚠️  Need to implement channel to send plot back to main thread");
+                println!("✅ Sending plot to main thread via channel");
+                let _ = tx.send(Ok(SendPtr(plot_ptr)));
             }
         });
     }

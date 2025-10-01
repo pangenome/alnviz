@@ -1,0 +1,23 @@
+[package]
+name = "alnview"
+version = "0.1.0"
+edition = "2021"
+authors = ["Gene Myers"]
+description = "Qt-free Rust+egui alignment viewer for FASTGA"
+
+[dependencies]
+eframe = "0.28"
+egui = "0.28"
+rfd = "0.14"  # Native file dialogs
+env_logger = "0.11"  # Logging
+
+[build-dependencies]
+cc = "1.0"
+
+[profile.dev]
+opt-level = 1  # Slightly faster debug builds
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

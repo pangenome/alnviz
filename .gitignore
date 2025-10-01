@@ -1,0 +1,30 @@
+# Rust
+/target/
+Cargo.lock
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# macOS
+.DS_Store
+
+# Qt build artifacts (legacy)
+BUILD/
+Makefile
+.qmake.stash
+*.dmg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak

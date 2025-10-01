@@ -1194,6 +1194,7 @@ DotPlot *createPlot(char *alnPath, int lCut, int iCut, int sCut, DotPlot *model)
     DotSegment *segs;
     DotLayer   *layer;
     int64       aoff, boff;
+    int64       alen;  // BUGFIX: for divide-by-zero check
     double      iid;
     int         j, k, nlay;
 
@@ -1223,10 +1224,16 @@ DotPlot *createPlot(char *alnPath, int lCut, int iCut, int sCut, DotPlot *model)
       { Read_Aln_Overlap(input,ovl);
         Skip_Aln_Trace(input);
 
-        if (ovl->path.aepos - ovl->path.abpos <= sCut)
+        alen = ovl->path.aepos - ovl->path.abpos;
+
+        if (alen <= sCut)
           continue;
 
-        iid  = 100. - (100. * ovl->path.diffs) / (ovl->path.aepos - ovl->path.abpos);
+        // BUGFIX: Prevent divide by zero when alignment length is 0
+        if (alen <= 0)
+          continue;
+
+        iid  = 100. - (100. * ovl->path.diffs) / alen;
 
         if (iid <= iCut)
           continue;

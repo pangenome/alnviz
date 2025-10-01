@@ -67,10 +67,9 @@ enum LoadingState {
 
 #[derive(Clone)]
 struct ViewState {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+    x: f64,          // Genome x coordinate at left edge
+    y: f64,          // Genome y coordinate at bottom edge
+    scale: f64,      // Base pairs per pixel
 
     // Genome lengths (from plot)
     max_x: f64,
@@ -93,8 +92,7 @@ impl Default for AlnViewApp {
             view: ViewState {
                 x: 0.0,
                 y: 0.0,
-                width: 1_000_000.0,
-                height: 1_000_000.0,
+                scale: 1000.0,  // 1000 bp per pixel initially
                 max_x: 1_000_000.0,
                 max_y: 1_000_000.0,
             },
@@ -140,13 +138,14 @@ impl eframe::App for AlnViewApp {
                             let blen = safe_plot.get_blen() as f64;
                             println!("✅ Plot loaded successfully! Genome lengths: {} x {}", alen, blen);
 
-                            // Update view with actual genome dimensions (1:1 bp aspect ratio)
+                            // Update view with actual genome dimensions
                             self.view.max_x = alen;
                             self.view.max_y = blen;
-                            self.view.width = alen;
-                            self.view.height = blen;
                             self.view.x = 0.0;
                             self.view.y = 0.0;
+                            // Set initial scale to fit entire genome (use max dimension)
+                            // Assuming ~1200px window, fit both genomes
+                            self.view.scale = alen.max(blen) / 1200.0;
 
                             // Get actual number of layers from plot
                             let nlays = safe_plot.get_nlays() as usize;
@@ -259,7 +258,7 @@ impl eframe::App for AlnViewApp {
                 }
 
                 ui.separator();
-                ui.label(format!("View: {:.0} × {:.0}", self.view.width, self.view.height));
+                ui.label(format!("Scale: {:.1} bp/px", self.view.scale));
             });
 
         // Status bar
@@ -282,11 +281,10 @@ impl eframe::App for AlnViewApp {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(format!(
-                        "X: {:.0} - {:.0}  Y: {:.0} - {:.0}",
+                        "Pos: X={:.0} Y={:.0}  Scale: {:.1} bp/px",
                         self.view.x,
-                        self.view.x + self.view.width,
                         self.view.y,
-                        self.view.y + self.view.height
+                        self.view.scale
                     ));
                 });
             });
@@ -395,52 +393,34 @@ impl AlnViewApp {
         // Handle interaction
         self.handle_interaction(&response, rect);
 
-        // True 1:1 aspect ratio rendering
-        // Calculate scaling to fit both dimensions while maintaining 1bp:1bp
-        let scale_x = rect.width() as f64 / self.view.width;
-        let scale_y = rect.height() as f64 / self.view.height;
-        let scale = scale_x.min(scale_y);  // Use minimum to fit both
-
-        // Center the view in the available space
-        let render_width = (self.view.width * scale) as f32;
-        let render_height = (self.view.height * scale) as f32;
-        let offset_x = (rect.width() - render_width) / 2.0;
-        let offset_y = (rect.height() - render_height) / 2.0;
-
-        // Coordinate transformation with 1:1 aspect ratio
+        // Genome to screen mapping using scale (bp/pixel)
         let genome_to_screen = |gx: f64, gy: f64| -> egui::Pos2 {
-            let norm_x = (gx - self.view.x) / self.view.width;
-            let norm_y = (gy - self.view.y) / self.view.height;
+            let pixel_x = (gx - self.view.x) / self.view.scale;
+            let pixel_y = (gy - self.view.y) / self.view.scale;
 
             egui::pos2(
-                rect.min.x + offset_x + norm_x as f32 * render_width,
-                rect.max.y - offset_y - norm_y as f32 * render_height, // Y is flipped
+                rect.min.x + pixel_x as f32,
+                rect.max.y - pixel_y as f32, // Y is flipped
             )
         };
 
         // Background - black like ALNVIEW
         painter.rect_filled(rect, 0.0, egui::Color32::BLACK);
 
-        // Genome to screen transform
-        let genome_to_screen = |gx: f64, gy: f64| {
-            let norm_x = (gx - self.view.x) / self.view.width;
-            let norm_y = (gy - self.view.y) / self.view.height;
-            egui::pos2(
-                rect.min.x + norm_x as f32 * rect.width(),
-                rect.max.y - norm_y as f32 * rect.height(),
-            )
-        };
-
         // Draw genome boundaries and scaffold lines
         if let Some(ref plot) = self.plot {
             let alen = plot.get_alen() as f64;
             let blen = plot.get_blen() as f64;
 
+            // Calculate visible genome region
+            let view_width = rect.width() as f64 * self.view.scale;
+            let view_height = rect.height() as f64 * self.view.scale;
+
             // Draw scaffold boundaries for genome A (vertical dashed gray lines)
             let scaffolds_a = plot.get_scaffold_boundaries(0);
             for &pos in &scaffolds_a {
                 let x = pos as f64;
-                if x >= self.view.x && x <= self.view.x + self.view.width {
+                if x >= self.view.x && x <= self.view.x + view_width {
                     let x_pos = genome_to_screen(x, 0.0).x;
                     // TODO: egui doesn't support dashed lines yet, using solid gray
                     painter.vline(x_pos, rect.y_range(), (1.0, egui::Color32::from_rgb(100, 100, 100)));
@@ -451,29 +431,29 @@ impl AlnViewApp {
             let scaffolds_b = plot.get_scaffold_boundaries(1);
             for &pos in &scaffolds_b {
                 let y = pos as f64;
-                if y >= self.view.y && y <= self.view.y + self.view.height {
+                if y >= self.view.y && y <= self.view.y + view_height {
                     let y_pos = genome_to_screen(0.0, y).y;
                     painter.hline(rect.x_range(), y_pos, (1.0, egui::Color32::from_rgb(100, 100, 100)));
                 }
             }
 
             // Draw genome end boundaries (thicker)
-            if alen >= self.view.x && alen <= self.view.x + self.view.width {
+            if alen >= self.view.x && alen <= self.view.x + view_width {
                 let x_pos = genome_to_screen(alen, 0.0).x;
                 painter.vline(x_pos, rect.y_range(), (2.0, egui::Color32::DARK_RED));
             }
 
-            if blen >= self.view.y && blen <= self.view.y + self.view.height {
+            if blen >= self.view.y && blen <= self.view.y + view_height {
                 let y_pos = genome_to_screen(0.0, blen).y;
                 painter.hline(rect.x_range(), y_pos, (2.0, egui::Color32::DARK_BLUE));
             }
 
             // Draw axes at origin
-            if self.view.x <= 0.0 && self.view.x + self.view.width >= 0.0 {
+            if self.view.x <= 0.0 && self.view.x + view_width >= 0.0 {
                 let x_pos = genome_to_screen(0.0, 0.0).x;
                 painter.vline(x_pos, rect.y_range(), (1.0, egui::Color32::GRAY));
             }
-            if self.view.y <= 0.0 && self.view.y + self.view.height >= 0.0 {
+            if self.view.y <= 0.0 && self.view.y + view_height >= 0.0 {
                 let y_pos = genome_to_screen(0.0, 0.0).y;
                 painter.hline(rect.x_range(), y_pos, (1.0, egui::Color32::GRAY));
             }
@@ -486,11 +466,15 @@ impl AlnViewApp {
                     continue;
                 }
 
+                // Calculate visible genome region based on canvas size and scale
+                let view_width = rect.width() as f64 * self.view.scale;
+                let view_height = rect.height() as f64 * self.view.scale;
+
                 let frame = ffi::Frame::new(
                     self.view.x,
                     self.view.y,
-                    self.view.width,
-                    self.view.height,
+                    view_width,
+                    view_height,
                 );
 
                 // Get ALL segments for this layer (bypass quad-tree for now)
@@ -501,10 +485,10 @@ impl AlnViewApp {
                 let mut drawn = 0;
                 for seg in all_segs {
                     // Simple visibility check
-                    if seg.aend < self.view.x as i64 || seg.abeg > (self.view.x + self.view.width) as i64 {
+                    if seg.aend < self.view.x as i64 || seg.abeg > (self.view.x + view_width) as i64 {
                         continue;
                     }
-                    if seg.bend < self.view.y as i64 || seg.bbeg > (self.view.y + self.view.height) as i64 {
+                    if seg.bend < self.view.y as i64 || seg.bbeg > (self.view.y + view_height) as i64 {
                         continue;
                     }
 
@@ -539,8 +523,11 @@ impl AlnViewApp {
     }
 
     fn draw_axes(&self, _ui: &mut egui::Ui, painter: &egui::Painter, rect: egui::Rect) {
+        let view_width = rect.width() as f64 * self.view.scale;
+        let view_height = rect.height() as f64 * self.view.scale;
+
         // X axis label
-        let x_text = format!("{:.0} - {:.0} bp", self.view.x, self.view.x + self.view.width);
+        let x_text = format!("{:.0} - {:.0} bp", self.view.x, self.view.x + view_width);
         painter.text(
             egui::pos2(rect.center().x, rect.max.y - 5.0),
             egui::Align2::CENTER_BOTTOM,
@@ -550,7 +537,7 @@ impl AlnViewApp {
         );
 
         // Y axis label (rotated would be nice, but keeping simple for now)
-        let y_text = format!("{:.0} - {:.0} bp", self.view.y, self.view.y + self.view.height);
+        let y_text = format!("{:.0} - {:.0} bp", self.view.y, self.view.y + view_height);
         painter.text(
             egui::pos2(rect.min.x + 5.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
@@ -601,11 +588,22 @@ impl AlnViewApp {
         // Regular pan on drag (when shift not held)
         if response.dragged() && !response.ctx.input(|i| i.modifiers.shift) {
             let delta = response.drag_delta();
-            let dx = -delta.x as f64 * self.view.width / rect.width() as f64;
-            let dy = delta.y as f64 * self.view.height / rect.height() as f64;
+            let dx = -delta.x as f64 * self.view.scale;
+            let dy = delta.y as f64 * self.view.scale;
 
-            self.view.x = (self.view.x + dx).max(0.0).min(self.view.max_x - self.view.width);
-            self.view.y = (self.view.y + dy).max(0.0).min(self.view.max_y - self.view.height);
+            let view_width = rect.width() as f64 * self.view.scale;
+            let view_height = rect.height() as f64 * self.view.scale;
+
+            self.view.x = (self.view.x + dx).max(0.0);
+            self.view.y = (self.view.y + dy).max(0.0);
+
+            // Only clamp on right/top if we're zoomed in
+            if view_width < self.view.max_x {
+                self.view.x = self.view.x.min(self.view.max_x - view_width);
+            }
+            if view_height < self.view.max_y {
+                self.view.y = self.view.y.min(self.view.max_y - view_height);
+            }
         }
 
         // Scroll wheel zoom
@@ -613,7 +611,11 @@ impl AlnViewApp {
             let scroll = response.ctx.input(|i| i.raw_scroll_delta.y);
             if scroll != 0.0 {
                 let zoom_factor = if scroll > 0.0 { 1.2 } else { 0.8 };
-                self.zoom(zoom_factor);
+                if let Some(mouse_pos) = response.hover_pos() {
+                    self.zoom_at_point(zoom_factor, mouse_pos, rect);
+                } else {
+                    self.zoom(zoom_factor);
+                }
             }
         }
     }
@@ -621,11 +623,11 @@ impl AlnViewApp {
     fn zoom_to_box(&mut self, canvas_rect: egui::Rect, screen_start: egui::Pos2, screen_end: egui::Pos2) {
         // Convert screen coordinates to genome coordinates
         let screen_to_genome = |pos: egui::Pos2| -> (f64, f64) {
-            let norm_x = (pos.x - canvas_rect.min.x) / canvas_rect.width();
-            let norm_y = 1.0 - (pos.y - canvas_rect.min.y) / canvas_rect.height();
+            let pixel_x = (pos.x - canvas_rect.min.x) as f64;
+            let pixel_y = (canvas_rect.max.y - pos.y) as f64;
 
-            let gx = self.view.x + norm_x as f64 * self.view.width;
-            let gy = self.view.y + norm_y as f64 * self.view.height;
+            let gx = self.view.x + pixel_x * self.view.scale;
+            let gy = self.view.y + pixel_y * self.view.scale;
             (gx, gy)
         };
 
@@ -637,18 +639,24 @@ impl AlnViewApp {
         let min_y = y1.min(y2);
         let max_y = y1.max(y2);
 
+        let box_width = max_x - min_x;
+        let box_height = max_y - min_y;
+
         // Save current view to history
         self.view_history.push(self.view.clone());
 
-        // Set new view
+        // Set new view position
         self.view.x = min_x.max(0.0);
         self.view.y = min_y.max(0.0);
-        self.view.width = (max_x - min_x).max(100.0);
-        self.view.height = (max_y - min_y).max(100.0);
 
-        // Clamp to genome bounds
-        self.view.x = self.view.x.min(self.view.max_x - self.view.width);
-        self.view.y = self.view.y.min(self.view.max_y - self.view.height);
+        // Calculate new scale to fit the box in the canvas
+        let scale_for_width = box_width / canvas_rect.width() as f64;
+        let scale_for_height = box_height / canvas_rect.height() as f64;
+        self.view.scale = scale_for_width.max(scale_for_height).max(0.1);
+
+        // Clamp position (allow zooming out beyond genome bounds)
+        self.view.x = self.view.x.max(0.0);
+        self.view.y = self.view.y.max(0.0);
     }
 }
 
@@ -735,29 +743,48 @@ impl AlnViewApp {
 
 impl AlnViewApp {
     fn zoom(&mut self, factor: f64) {
-        let center_x = self.view.x + self.view.width / 2.0;
-        let center_y = self.view.y + self.view.height / 2.0;
+        // Zoom by changing scale
+        self.view.scale /= factor;
+        self.view.scale = self.view.scale.max(0.1);  // Don't zoom in too far
+    }
 
-        self.view.width /= factor;
-        self.view.height /= factor;
+    fn zoom_at_point(&mut self, factor: f64, screen_pos: egui::Pos2, canvas_rect: egui::Rect) {
+        // Convert screen position to genome coordinates
+        let pixel_x = (screen_pos.x - canvas_rect.min.x) as f64;
+        let pixel_y = (canvas_rect.max.y - screen_pos.y) as f64;
 
-        // Clamp to reasonable sizes
-        self.view.width = self.view.width.max(100.0).min(self.view.max_x);
-        self.view.height = self.view.height.max(100.0).min(self.view.max_y);
+        let genome_x = self.view.x + pixel_x * self.view.scale;
+        let genome_y = self.view.y + pixel_y * self.view.scale;
 
-        // Recenter
-        self.view.x = (center_x - self.view.width / 2.0).max(0.0);
-        self.view.y = (center_y - self.view.height / 2.0).max(0.0);
+        // Zoom by changing scale
+        self.view.scale /= factor;
+        self.view.scale = self.view.scale.max(0.1);  // Don't zoom in too far
 
-        // Clamp position
-        self.view.x = self.view.x.min(self.view.max_x - self.view.width);
-        self.view.y = self.view.y.min(self.view.max_y - self.view.height);
+        // Keep the mouse position at the same genome coordinate
+        self.view.x = genome_x - pixel_x * self.view.scale;
+        self.view.y = genome_y - pixel_y * self.view.scale;
+
+        // Clamp position to prevent panning outside genome bounds
+        let view_width = canvas_rect.width() as f64 * self.view.scale;
+        let view_height = canvas_rect.height() as f64 * self.view.scale;
+
+        // Don't allow panning beyond left/bottom edges
+        self.view.x = self.view.x.max(0.0);
+        self.view.y = self.view.y.max(0.0);
+
+        // Don't allow panning beyond right/top edges (but allow zooming out to see whole genome)
+        if view_width < self.view.max_x {
+            self.view.x = self.view.x.min(self.view.max_x - view_width);
+        }
+        if view_height < self.view.max_y {
+            self.view.y = self.view.y.min(self.view.max_y - view_height);
+        }
     }
 
     fn reset_view(&mut self) {
         self.view.x = 0.0;
         self.view.y = 0.0;
-        self.view.width = self.view.max_x;
-        self.view.height = self.view.max_y;
+        // Fit entire genome (use max dimension to ensure both fit)
+        self.view.scale = self.view.max_x.max(self.view.max_y) / 1200.0;
     }
 }

@@ -3,6 +3,8 @@ mod ffi;
 use eframe::egui;
 use std::ffi::CString;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
@@ -40,9 +42,20 @@ struct AlnViewApp {
     current_file: Option<PathBuf>,
     show_about: bool,
 
+    // Loading state
+    loading: Arc<Mutex<LoadingState>>,
+
     // Interaction state
     dragging: bool,
     drag_start: egui::Pos2,
+}
+
+#[derive(Clone)]
+enum LoadingState {
+    Idle,
+    Loading(String), // file path
+    Success(String),
+    Failed(String),
 }
 
 struct ViewState {
@@ -81,6 +94,7 @@ impl Default for AlnViewApp {
             num_layers: 0,
             current_file: None,
             show_about: false,
+            loading: Arc::new(Mutex::new(LoadingState::Idle)),
             dragging: false,
             drag_start: egui::Pos2::ZERO,
         }
@@ -105,6 +119,20 @@ impl Default for LayerSettings {
 
 impl eframe::App for AlnViewApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Check loading state
+        let loading_state = self.loading.lock().unwrap().clone();
+        match loading_state {
+            LoadingState::Success(msg) => {
+                println!("✅ {}", msg);
+                *self.loading.lock().unwrap() = LoadingState::Idle;
+            }
+            LoadingState::Failed(msg) => {
+                eprintln!("❌ {}", msg);
+                *self.loading.lock().unwrap() = LoadingState::Idle;
+            }
+            _ => {}
+        }
+
         // Menu bar
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -181,10 +209,19 @@ impl eframe::App for AlnViewApp {
         // Status bar
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if let Some(ref path) = self.current_file {
-                    ui.label(format!("📄 {}", path.display()));
-                } else {
-                    ui.label("No file loaded");
+                // Show loading state
+                match &*self.loading.lock().unwrap() {
+                    LoadingState::Loading(path) => {
+                        ui.spinner();
+                        ui.label(format!("Loading: {}", path));
+                    }
+                    _ => {
+                        if let Some(ref path) = self.current_file {
+                            ui.label(format!("📄 {}", path.display()));
+                        } else {
+                            ui.label("No file loaded");
+                        }
+                    }
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -208,10 +245,21 @@ impl eframe::App for AlnViewApp {
                     ui.vertical_centered(|ui| {
                         ui.heading("🦀 ALNview - Rust Edition");
                         ui.add_space(20.0);
-                        ui.label("Open a .1aln file to begin");
-                        ui.add_space(10.0);
-                        if ui.button("📁 Open File").clicked() {
-                            self.open_file_dialog();
+
+                        let is_loading = matches!(&*self.loading.lock().unwrap(), LoadingState::Loading(_));
+
+                        if is_loading {
+                            if let LoadingState::Loading(path) = &*self.loading.lock().unwrap() {
+                                ui.spinner();
+                                ui.label(format!("Loading: {}...", path));
+                                ui.label("This may take a while for large files");
+                            }
+                        } else {
+                            ui.label("Open a .1aln file to begin");
+                            ui.add_space(10.0);
+                            if ui.button("📁 Open File").clicked() {
+                                self.open_file_dialog();
+                            }
                         }
                     });
                 });
@@ -240,6 +288,11 @@ impl eframe::App for AlnViewApp {
                         self.show_about = false;
                     }
                 });
+        }
+
+        // Request repaint if loading
+        if matches!(&*self.loading.lock().unwrap(), LoadingState::Loading(_)) {
+            ctx.request_repaint();
         }
     }
 }
@@ -287,7 +340,7 @@ impl AlnViewApp {
         self.handle_interaction(&response);
 
         // Coordinate transformation
-        let to_screen = |gx: f64, gy: f64| -> egui::Pos2 {
+        let _to_screen = |gx: f64, gy: f64| -> egui::Pos2 {
             let norm_x = (gx - self.view.x) / self.view.width;
             let norm_y = (gy - self.view.y) / self.view.height;
 
@@ -396,60 +449,71 @@ impl AlnViewApp {
             .add_filter("Alignment Files", &["1aln"])
             .pick_file()
         {
-            self.load_file(path);
+            self.load_file_async(path);
         }
     }
 
-    fn load_file(&mut self, path: PathBuf) {
+    fn load_file_async(&mut self, path: PathBuf) {
+        let loading = Arc::clone(&self.loading);
+
+        // Set loading state
+        *loading.lock().unwrap() = LoadingState::Loading(
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("file")
+                .to_string()
+        );
+
+        println!("🔍 Starting async load: {}", path.display());
+
         let path_str = match path.to_str() {
-            Some(s) => s,
+            Some(s) => s.to_string(),
             None => {
-                eprintln!("Invalid path encoding");
+                *loading.lock().unwrap() = LoadingState::Failed("Invalid path encoding".to_string());
                 return;
             }
         };
 
-        let c_path = match CString::new(path_str) {
-            Ok(s) => s,
-            Err(_) => {
-                eprintln!("Path contains null byte");
-                return;
-            }
-        };
+        // Spawn background thread for loading
+        thread::spawn(move || {
+            println!("🧵 Background thread: Loading file...");
 
-        unsafe {
-            let plot_ptr = ffi::createPlot(
-                c_path.as_ptr(),
-                0,  // lCut - TODO: make configurable
-                0,  // iCut
-                0,  // sCut
-                std::ptr::null_mut(),
-            );
+            let c_path = match CString::new(path_str.as_str()) {
+                Ok(s) => s,
+                Err(_) => {
+                    *loading.lock().unwrap() = LoadingState::Failed("Path contains null byte".to_string());
+                    return;
+                }
+            };
 
-            if let Some(safe_plot) = ffi::SafePlot::new(plot_ptr) {
-                self.current_file = Some(path.clone());
-                self.plot = Some(safe_plot);
+            println!("📞 Calling C createPlot()...");
 
-                // TODO: Get actual genome lengths from plot
-                // For now, using defaults
-                self.view.max_x = 100_000_000.0;
-                self.view.max_y = 100_000_000.0;
+            let plot_ptr = unsafe {
+                ffi::createPlot(
+                    c_path.as_ptr(),
+                    0,  // lCut
+                    0,  // iCut
+                    0,  // sCut
+                    std::ptr::null_mut(),
+                )
+            };
 
-                self.reset_view();
+            println!("📞 C createPlot() returned: {:?}", plot_ptr);
 
-                // Initialize layer settings
-                self.num_layers = 1; // TODO: get from plot
-                self.layers = vec![LayerSettings {
-                    visible: true,
-                    name: "Alignments".to_string(),
-                    ..Default::default()
-                }];
-
-                println!("✅ Loaded: {}", path_str);
+            if plot_ptr.is_null() {
+                *loading.lock().unwrap() = LoadingState::Failed(format!(
+                    "Failed to load: {} (C returned NULL)", path_str
+                ));
             } else {
-                eprintln!("❌ Failed to load: {}", path_str);
+                // TODO: We need to communicate the plot back to the main thread
+                // For now, just mark as success
+                *loading.lock().unwrap() = LoadingState::Success(format!(
+                    "Loaded: {} (but can't transfer to UI yet!)", path_str
+                ));
+                println!("⚠️  WARNING: Plot loaded in background thread but we can't transfer it to UI thread yet!");
+                println!("⚠️  Need to implement channel to send plot back to main thread");
             }
-        }
+        });
     }
 }
 

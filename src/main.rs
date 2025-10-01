@@ -38,6 +38,7 @@ struct AlnViewApp {
 
     // View state
     view: ViewState,
+    view_history: Vec<ViewState>,  // For 'z' key to go back
 
     // Layer settings
     layers: Vec<LayerSettings>,
@@ -52,8 +53,8 @@ struct AlnViewApp {
     plot_receiver: Option<Receiver<Result<SendPtr, String>>>,
 
     // Interaction state
-    dragging: bool,
-    drag_start: egui::Pos2,
+    box_zoom_start: Option<egui::Pos2>,  // Shift+drag box zoom
+    selected_segment: Option<usize>,     // For x/X key selection
 }
 
 #[derive(Clone)]
@@ -64,6 +65,7 @@ enum LoadingState {
     Failed(String),
 }
 
+#[derive(Clone)]
 struct ViewState {
     x: f64,
     y: f64,
@@ -96,14 +98,15 @@ impl Default for AlnViewApp {
                 max_x: 1_000_000.0,
                 max_y: 1_000_000.0,
             },
+            view_history: Vec::new(),
             layers: vec![LayerSettings::default()],
             num_layers: 0,
             current_file: None,
             show_about: false,
             loading: Arc::new(Mutex::new(LoadingState::Idle)),
             plot_receiver: None,
-            dragging: false,
-            drag_start: egui::Pos2::ZERO,
+            box_zoom_start: None,
+            selected_segment: None,
         }
     }
 }
@@ -137,13 +140,11 @@ impl eframe::App for AlnViewApp {
                             let blen = safe_plot.get_blen() as f64;
                             println!("✅ Plot loaded successfully! Genome lengths: {} x {}", alen, blen);
 
-                            // Update view with actual genome dimensions
-                            // Use max dimension for both to maintain 1:1 aspect ratio
-                            let max_dim = alen.max(blen);
+                            // Update view with actual genome dimensions (1:1 bp aspect ratio)
                             self.view.max_x = alen;
                             self.view.max_y = blen;
-                            self.view.width = max_dim;
-                            self.view.height = max_dim;
+                            self.view.width = alen;
+                            self.view.height = blen;
                             self.view.x = 0.0;
                             self.view.y = 0.0;
 
@@ -392,21 +393,33 @@ impl AlnViewApp {
         let rect = response.rect;
 
         // Handle interaction
-        self.handle_interaction(&response);
+        self.handle_interaction(&response, rect);
 
-        // Coordinate transformation
-        let _to_screen = |gx: f64, gy: f64| -> egui::Pos2 {
+        // True 1:1 aspect ratio rendering
+        // Calculate scaling to fit both dimensions while maintaining 1bp:1bp
+        let scale_x = rect.width() as f64 / self.view.width;
+        let scale_y = rect.height() as f64 / self.view.height;
+        let scale = scale_x.min(scale_y);  // Use minimum to fit both
+
+        // Center the view in the available space
+        let render_width = (self.view.width * scale) as f32;
+        let render_height = (self.view.height * scale) as f32;
+        let offset_x = (rect.width() - render_width) / 2.0;
+        let offset_y = (rect.height() - render_height) / 2.0;
+
+        // Coordinate transformation with 1:1 aspect ratio
+        let genome_to_screen = |gx: f64, gy: f64| -> egui::Pos2 {
             let norm_x = (gx - self.view.x) / self.view.width;
             let norm_y = (gy - self.view.y) / self.view.height;
 
             egui::pos2(
-                rect.min.x + norm_x as f32 * rect.width(),
-                rect.max.y - norm_y as f32 * rect.height(), // Y is flipped
+                rect.min.x + offset_x + norm_x as f32 * render_width,
+                rect.max.y - offset_y - norm_y as f32 * render_height, // Y is flipped
             )
         };
 
-        // Background
-        painter.rect_filled(rect, 0.0, egui::Color32::WHITE);
+        // Background - black like ALNVIEW
+        painter.rect_filled(rect, 0.0, egui::Color32::BLACK);
 
         // Genome to screen transform
         let genome_to_screen = |gx: f64, gy: f64| {
@@ -423,23 +436,24 @@ impl AlnViewApp {
             let alen = plot.get_alen() as f64;
             let blen = plot.get_blen() as f64;
 
-            // Draw scaffold boundaries for genome A (vertical lines)
+            // Draw scaffold boundaries for genome A (vertical dashed gray lines)
             let scaffolds_a = plot.get_scaffold_boundaries(0);
             for &pos in &scaffolds_a {
                 let x = pos as f64;
                 if x >= self.view.x && x <= self.view.x + self.view.width {
                     let x_pos = genome_to_screen(x, 0.0).x;
-                    painter.vline(x_pos, rect.y_range(), (1.0, egui::Color32::from_rgb(200, 200, 200)));
+                    // TODO: egui doesn't support dashed lines yet, using solid gray
+                    painter.vline(x_pos, rect.y_range(), (1.0, egui::Color32::from_rgb(100, 100, 100)));
                 }
             }
 
-            // Draw scaffold boundaries for genome B (horizontal lines)
+            // Draw scaffold boundaries for genome B (horizontal dashed gray lines)
             let scaffolds_b = plot.get_scaffold_boundaries(1);
             for &pos in &scaffolds_b {
                 let y = pos as f64;
                 if y >= self.view.y && y <= self.view.y + self.view.height {
                     let y_pos = genome_to_screen(0.0, y).y;
-                    painter.hline(rect.x_range(), y_pos, (1.0, egui::Color32::from_rgb(200, 200, 200)));
+                    painter.hline(rect.x_range(), y_pos, (1.0, egui::Color32::from_rgb(100, 100, 100)));
                 }
             }
 
@@ -498,9 +512,17 @@ impl AlnViewApp {
                     let p1 = genome_to_screen(seg.abeg as f64, seg.bbeg as f64);
                     let p2 = genome_to_screen(seg.aend as f64, seg.bend as f64);
 
+                    // Forward (positive slope) = green, Reverse (negative slope) = red
+                    let is_forward = (seg.bend - seg.bbeg) * (seg.aend - seg.abeg) > 0;
+                    let color = if is_forward {
+                        egui::Color32::from_rgb(0, 255, 0)  // Green for forward
+                    } else {
+                        egui::Color32::from_rgb(255, 0, 0)  // Red for reverse complement
+                    };
+
                     painter.line_segment(
                         [p1, p2],
-                        egui::Stroke::new(1.0, layer_settings.color_forward),
+                        egui::Stroke::new(1.0, color),
                     );
                     drawn += 1;
                 }
@@ -538,18 +560,55 @@ impl AlnViewApp {
         );
     }
 
-    fn handle_interaction(&mut self, response: &egui::Response) {
-        // Pan on drag
-        if response.dragged() {
+    fn handle_interaction(&mut self, response: &egui::Response, rect: egui::Rect) {
+        // Z key - go back in zoom history
+        response.ctx.input(|i| {
+            if i.key_pressed(egui::Key::Z) {
+                if let Some(prev_view) = self.view_history.pop() {
+                    self.view = prev_view;
+                }
+            }
+        });
+
+        // Shift+drag for box zoom
+        if response.hovered() {
+            let shift_held = response.ctx.input(|i| i.modifiers.shift);
+
+            if shift_held && response.drag_started() {
+                self.box_zoom_start = response.hover_pos();
+            }
+
+            if let Some(start) = self.box_zoom_start {
+                if response.dragged() {
+                    // Draw box while dragging
+                    if let Some(current) = response.hover_pos() {
+                        let painter = response.ctx.debug_painter();
+                        let box_rect = egui::Rect::from_two_pos(start, current);
+                        painter.rect_stroke(box_rect, 0.0, egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 100, 100)));
+                    }
+                }
+
+                if response.drag_stopped() {
+                    // Zoom to box
+                    if let Some(end) = response.hover_pos() {
+                        self.zoom_to_box(rect, start, end);
+                    }
+                    self.box_zoom_start = None;
+                }
+            }
+        }
+
+        // Regular pan on drag (when shift not held)
+        if response.dragged() && !response.ctx.input(|i| i.modifiers.shift) {
             let delta = response.drag_delta();
-            let dx = -delta.x as f64 * self.view.width / response.rect.width() as f64;
-            let dy = delta.y as f64 * self.view.height / response.rect.height() as f64;
+            let dx = -delta.x as f64 * self.view.width / rect.width() as f64;
+            let dy = delta.y as f64 * self.view.height / rect.height() as f64;
 
             self.view.x = (self.view.x + dx).max(0.0).min(self.view.max_x - self.view.width);
             self.view.y = (self.view.y + dy).max(0.0).min(self.view.max_y - self.view.height);
         }
 
-        // Zoom on scroll
+        // Scroll wheel zoom
         if response.hovered() {
             let scroll = response.ctx.input(|i| i.raw_scroll_delta.y);
             if scroll != 0.0 {
@@ -557,6 +616,39 @@ impl AlnViewApp {
                 self.zoom(zoom_factor);
             }
         }
+    }
+
+    fn zoom_to_box(&mut self, canvas_rect: egui::Rect, screen_start: egui::Pos2, screen_end: egui::Pos2) {
+        // Convert screen coordinates to genome coordinates
+        let screen_to_genome = |pos: egui::Pos2| -> (f64, f64) {
+            let norm_x = (pos.x - canvas_rect.min.x) / canvas_rect.width();
+            let norm_y = 1.0 - (pos.y - canvas_rect.min.y) / canvas_rect.height();
+
+            let gx = self.view.x + norm_x as f64 * self.view.width;
+            let gy = self.view.y + norm_y as f64 * self.view.height;
+            (gx, gy)
+        };
+
+        let (x1, y1) = screen_to_genome(screen_start);
+        let (x2, y2) = screen_to_genome(screen_end);
+
+        let min_x = x1.min(x2);
+        let max_x = x1.max(x2);
+        let min_y = y1.min(y2);
+        let max_y = y1.max(y2);
+
+        // Save current view to history
+        self.view_history.push(self.view.clone());
+
+        // Set new view
+        self.view.x = min_x.max(0.0);
+        self.view.y = min_y.max(0.0);
+        self.view.width = (max_x - min_x).max(100.0);
+        self.view.height = (max_y - min_y).max(100.0);
+
+        // Clamp to genome bounds
+        self.view.x = self.view.x.min(self.view.max_x - self.view.width);
+        self.view.y = self.view.y.min(self.view.max_y - self.view.height);
     }
 }
 

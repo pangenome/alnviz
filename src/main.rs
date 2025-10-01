@@ -143,9 +143,9 @@ impl eframe::App for AlnViewApp {
                             self.view.max_y = blen;
                             self.view.x = 0.0;
                             self.view.y = 0.0;
-                            // Set initial scale to fit entire genome (use max dimension)
-                            // Assuming ~1200px window, fit both genomes
-                            self.view.scale = alen.max(blen) / 1200.0;
+                            // Set initial scale to fit entire genome with some padding
+                            // Assuming ~800px canvas (after UI panels), add 10% padding
+                            self.view.scale = alen.max(blen) / 800.0 * 1.1;
 
                             // Get actual number of layers from plot
                             let nlays = safe_plot.get_nlays() as usize;
@@ -479,10 +479,8 @@ impl AlnViewApp {
 
                 // Get ALL segments for this layer (bypass quad-tree for now)
                 let all_segs = plot.get_all_segments(layer_idx as i32);
-                println!("🎨 Layer {} has {} total segments", layer_idx, all_segs.len());
 
                 // Draw segments that are in view
-                let mut drawn = 0;
                 for seg in all_segs {
                     // Simple visibility check
                     if seg.aend < self.view.x as i64 || seg.abeg > (self.view.x + view_width) as i64 {
@@ -508,10 +506,7 @@ impl AlnViewApp {
                         [p1, p2],
                         egui::Stroke::new(1.0, color),
                     );
-                    drawn += 1;
                 }
-
-                println!("  Drew {} segments in view", drawn);
             }
         }
 
@@ -784,7 +779,7 @@ impl AlnViewApp {
     fn reset_view(&mut self) {
         self.view.x = 0.0;
         self.view.y = 0.0;
-        // Fit entire genome (use max dimension to ensure both fit)
-        self.view.scale = self.view.max_x.max(self.view.max_y) / 1200.0;
+        // Fit entire genome with some padding
+        self.view.scale = self.view.max_x.max(self.view.max_y) / 800.0 * 1.1;
     }
 }

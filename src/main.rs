@@ -138,10 +138,12 @@ impl eframe::App for AlnViewApp {
                             println!("✅ Plot loaded successfully! Genome lengths: {} x {}", alen, blen);
 
                             // Update view with actual genome dimensions
+                            // Use max dimension for both to maintain 1:1 aspect ratio
+                            let max_dim = alen.max(blen);
                             self.view.max_x = alen;
                             self.view.max_y = blen;
-                            self.view.width = alen;
-                            self.view.height = blen;
+                            self.view.width = max_dim;
+                            self.view.height = max_dim;
                             self.view.x = 0.0;
                             self.view.y = 0.0;
 
@@ -416,18 +418,37 @@ impl AlnViewApp {
             )
         };
 
-        // Draw genome boundaries
+        // Draw genome boundaries and scaffold lines
         if let Some(ref plot) = self.plot {
             let alen = plot.get_alen() as f64;
             let blen = plot.get_blen() as f64;
 
-            // Draw right boundary (genome A end)
+            // Draw scaffold boundaries for genome A (vertical lines)
+            let scaffolds_a = plot.get_scaffold_boundaries(0);
+            for &pos in &scaffolds_a {
+                let x = pos as f64;
+                if x >= self.view.x && x <= self.view.x + self.view.width {
+                    let x_pos = genome_to_screen(x, 0.0).x;
+                    painter.vline(x_pos, rect.y_range(), (1.0, egui::Color32::from_rgb(200, 200, 200)));
+                }
+            }
+
+            // Draw scaffold boundaries for genome B (horizontal lines)
+            let scaffolds_b = plot.get_scaffold_boundaries(1);
+            for &pos in &scaffolds_b {
+                let y = pos as f64;
+                if y >= self.view.y && y <= self.view.y + self.view.height {
+                    let y_pos = genome_to_screen(0.0, y).y;
+                    painter.hline(rect.x_range(), y_pos, (1.0, egui::Color32::from_rgb(200, 200, 200)));
+                }
+            }
+
+            // Draw genome end boundaries (thicker)
             if alen >= self.view.x && alen <= self.view.x + self.view.width {
                 let x_pos = genome_to_screen(alen, 0.0).x;
                 painter.vline(x_pos, rect.y_range(), (2.0, egui::Color32::DARK_RED));
             }
 
-            // Draw top boundary (genome B end)
             if blen >= self.view.y && blen <= self.view.y + self.view.height {
                 let y_pos = genome_to_screen(0.0, blen).y;
                 painter.hline(rect.x_range(), y_pos, (2.0, egui::Color32::DARK_BLUE));

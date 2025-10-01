@@ -98,6 +98,10 @@ extern "C" {
     /// Get raw segment array for a layer
     pub fn DotPlot_GetSegments(plot: *mut DotPlot, layer: c_int, count: *mut i64) -> *const DotSegment;
 
+    /// Get scaffold boundaries (genome: 0=A, 1=B)
+    /// Returns array of cumulative positions, caller must free()
+    pub fn DotPlot_GetScaffoldBoundaries(plot: *mut DotPlot, genome: c_int, count: *mut c_int) -> *mut i64;
+
     /// Create alignment text for a segment
     pub fn create_alignment(
         plot: *mut DotPlot,
@@ -194,6 +198,23 @@ impl SafePlot {
                 &[]
             } else {
                 std::slice::from_raw_parts(ptr, count as usize)
+            }
+        }
+    }
+
+    /// Get scaffold boundaries for genome A or B (0 or 1)
+    /// Returns Vec of positions, caller owns the data
+    pub fn get_scaffold_boundaries(&self, genome: i32) -> Vec<i64> {
+        unsafe {
+            let mut count: c_int = 0;
+            let ptr = DotPlot_GetScaffoldBoundaries(self.ptr, genome, &mut count as *mut c_int);
+            if ptr.is_null() || count == 0 {
+                Vec::new()
+            } else {
+                let slice = std::slice::from_raw_parts(ptr, count as usize);
+                let vec = slice.to_vec();
+                libc::free(ptr as *mut libc::c_void);
+                vec
             }
         }
     }

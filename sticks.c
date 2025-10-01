@@ -1466,6 +1466,38 @@ DotSegment* DotPlot_GetSegments(DotPlot *plot, int layer, int64 *count) {
   return plot->layers[layer]->segs;
 }
 
+// Get scaffold boundaries for drawing
+// Returns array of cumulative positions (end of each scaffold)
+int64* DotPlot_GetScaffoldBoundaries(DotPlot *plot, int genome, int *count) {
+  GDB *gdb;
+  GDB_SCAFFOLD *scaffs;
+  GDB_CONTIG *contigs;
+  int nscaff, i;
+  int64 *bounds;
+
+  if (genome == 0) {
+    if (plot->db1 == NULL) { *count = 0; return NULL; }
+    gdb = &(plot->db1->gdb);
+  } else {
+    if (plot->db2 == NULL) { *count = 0; return NULL; }
+    gdb = &(plot->db2->gdb);
+  }
+
+  nscaff = gdb->nscaff;
+  scaffs = gdb->scaffolds;
+  contigs = gdb->contigs;
+
+  bounds = malloc(sizeof(int64) * nscaff);
+  if (bounds == NULL) { *count = 0; return NULL; }
+
+  for (i = 0; i < nscaff; i++) {
+    bounds[i] = contigs[scaffs[i].fctg].sbeg + scaffs[i].slen;
+  }
+
+  *count = nscaff;
+  return bounds;
+}
+
 void Free_DotPlot(DotPlot *plot)
 { int i;
 

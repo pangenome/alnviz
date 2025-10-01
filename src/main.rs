@@ -132,18 +132,32 @@ impl eframe::App for AlnViewApp {
                 match result {
                     Ok(SendPtr(plot_ptr)) => {
                         if let Some(safe_plot) = ffi::SafePlot::new(plot_ptr) {
-                            println!("✅ Plot loaded successfully!");
+                            // Extract real genome lengths
+                            let alen = safe_plot.get_alen() as f64;
+                            let blen = safe_plot.get_blen() as f64;
+                            println!("✅ Plot loaded successfully! Genome lengths: {} x {}", alen, blen);
+
+                            // Update view with actual genome dimensions
+                            self.view.max_x = alen;
+                            self.view.max_y = blen;
+                            self.view.width = alen;
+                            self.view.height = blen;
+                            self.view.x = 0.0;
+                            self.view.y = 0.0;
+
+                            // Get actual number of layers from plot
+                            let nlays = safe_plot.get_nlays() as usize;
+                            println!("  Plot has {} layers", nlays);
+
                             self.plot = Some(safe_plot);
-                            self.num_layers = 1;
-                            self.layers = vec![LayerSettings {
+                            self.num_layers = nlays;
+
+                            // Create layer settings for all layers
+                            self.layers = (0..nlays).map(|i| LayerSettings {
                                 visible: true,
-                                name: "Alignments".to_string(),
+                                name: format!("Layer {}", i),
                                 ..Default::default()
-                            }];
-                            // TODO: Get actual genome lengths
-                            self.view.max_x = 100_000_000.0;
-                            self.view.max_y = 100_000_000.0;
-                            self.reset_view();
+                            }).collect();
 
                             *self.loading.lock().unwrap() = LoadingState::Success("Loaded successfully".to_string());
                         } else {
@@ -392,6 +406,44 @@ impl AlnViewApp {
         // Background
         painter.rect_filled(rect, 0.0, egui::Color32::WHITE);
 
+        // Genome to screen transform
+        let genome_to_screen = |gx: f64, gy: f64| {
+            let norm_x = (gx - self.view.x) / self.view.width;
+            let norm_y = (gy - self.view.y) / self.view.height;
+            egui::pos2(
+                rect.min.x + norm_x as f32 * rect.width(),
+                rect.max.y - norm_y as f32 * rect.height(),
+            )
+        };
+
+        // Draw genome boundaries
+        if let Some(ref plot) = self.plot {
+            let alen = plot.get_alen() as f64;
+            let blen = plot.get_blen() as f64;
+
+            // Draw right boundary (genome A end)
+            if alen >= self.view.x && alen <= self.view.x + self.view.width {
+                let x_pos = genome_to_screen(alen, 0.0).x;
+                painter.vline(x_pos, rect.y_range(), (2.0, egui::Color32::DARK_RED));
+            }
+
+            // Draw top boundary (genome B end)
+            if blen >= self.view.y && blen <= self.view.y + self.view.height {
+                let y_pos = genome_to_screen(0.0, blen).y;
+                painter.hline(rect.x_range(), y_pos, (2.0, egui::Color32::DARK_BLUE));
+            }
+
+            // Draw axes at origin
+            if self.view.x <= 0.0 && self.view.x + self.view.width >= 0.0 {
+                let x_pos = genome_to_screen(0.0, 0.0).x;
+                painter.vline(x_pos, rect.y_range(), (1.0, egui::Color32::GRAY));
+            }
+            if self.view.y <= 0.0 && self.view.y + self.view.height >= 0.0 {
+                let y_pos = genome_to_screen(0.0, 0.0).y;
+                painter.hline(rect.x_range(), y_pos, (1.0, egui::Color32::GRAY));
+            }
+        }
+
         // Draw alignment segments for each visible layer
         if let Some(ref plot) = self.plot {
             for (layer_idx, layer_settings) in self.layers.iter().enumerate() {
@@ -406,24 +458,33 @@ impl AlnViewApp {
                     self.view.height,
                 );
 
-                // Query C backend for segments in view
-                if let Some(seg_list) = plot.query_layer(layer_idx as i32, &frame) {
-                // For now, we'll draw dummy segments since we need to properly
-                // access the segment data from C. This is a placeholder.
+                // Get ALL segments for this layer (bypass quad-tree for now)
+                let all_segs = plot.get_all_segments(layer_idx as i32);
+                println!("🎨 Layer {} has {} total segments", layer_idx, all_segs.len());
 
-                let num_segs = seg_list.len();
+                // Draw segments that are in view
+                let mut drawn = 0;
+                for seg in all_segs {
+                    // Simple visibility check
+                    if seg.aend < self.view.x as i64 || seg.abeg > (self.view.x + self.view.width) as i64 {
+                        continue;
+                    }
+                    if seg.bend < self.view.y as i64 || seg.bbeg > (self.view.y + self.view.height) as i64 {
+                        continue;
+                    }
 
-                    // TODO: Actually get segment pointers from C and draw them
-                    // For now, just show that we're querying successfully
+                    // Draw the segment as a line
+                    let p1 = genome_to_screen(seg.abeg as f64, seg.bbeg as f64);
+                    let p2 = genome_to_screen(seg.aend as f64, seg.bend as f64);
 
-                    ui.painter().text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        format!("Layer {} has {} segments in view", layer_idx, num_segs),
-                        egui::FontId::proportional(14.0),
-                        egui::Color32::DARK_GRAY,
+                    painter.line_segment(
+                        [p1, p2],
+                        egui::Stroke::new(1.0, layer_settings.color_forward),
                     );
+                    drawn += 1;
                 }
+
+                println!("  Drew {} segments in view", drawn);
             }
         }
 

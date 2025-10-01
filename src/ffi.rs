@@ -52,7 +52,7 @@ pub struct QuadLeaf {
     pub idx: [i32; 8],  // This is actually variable-sized, handle with care!
 }
 
-// Opaque types (we don't access their internals from Rust)
+// Opaque pointer - don't access struct fields directly from Rust
 pub enum DotPlot {}
 pub enum DotLayer {}
 pub enum DotGDB {}
@@ -89,6 +89,14 @@ extern "C" {
 
     /// Free a plot
     pub fn Free_DotPlot(plot: *mut DotPlot);
+
+    /// Accessor functions for DotPlot fields
+    pub fn DotPlot_GetAlen(plot: *mut DotPlot) -> i64;
+    pub fn DotPlot_GetBlen(plot: *mut DotPlot) -> i64;
+    pub fn DotPlot_GetNlays(plot: *mut DotPlot) -> c_int;
+
+    /// Get raw segment array for a layer
+    pub fn DotPlot_GetSegments(plot: *mut DotPlot, layer: c_int, count: *mut i64) -> *const DotSegment;
 
     /// Create alignment text for a segment
     pub fn create_alignment(
@@ -160,6 +168,34 @@ impl SafePlot {
 
     pub fn as_ptr(&self) -> *mut DotPlot {
         self.ptr
+    }
+
+    /// Get genome A length
+    pub fn get_alen(&self) -> i64 {
+        unsafe { DotPlot_GetAlen(self.ptr) }
+    }
+
+    /// Get genome B length
+    pub fn get_blen(&self) -> i64 {
+        unsafe { DotPlot_GetBlen(self.ptr) }
+    }
+
+    /// Get number of layers
+    pub fn get_nlays(&self) -> i32 {
+        unsafe { DotPlot_GetNlays(self.ptr) }
+    }
+
+    /// Get all segments for a layer (no quad-tree, just raw array)
+    pub fn get_all_segments(&self, layer: i32) -> &[DotSegment] {
+        unsafe {
+            let mut count: i64 = 0;
+            let ptr = DotPlot_GetSegments(self.ptr, layer, &mut count as *mut i64);
+            if ptr.is_null() || count == 0 {
+                &[]
+            } else {
+                std::slice::from_raw_parts(ptr, count as usize)
+            }
+        }
     }
 
     /// Query segments in a layer

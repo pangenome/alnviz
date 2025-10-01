@@ -316,12 +316,18 @@ static void Clip_Segment(Double_Box *seg, Double_Box *frame)
       t = y1; y1 = y2; y2 = t;
     }
   if (y2 > frame->bend)
-    { x2 = x1 + (x2 - x1) * (frame->bend - y1) / (y2 - y1);
+    { // BUGFIX: Prevent divide by zero
+      double ydiff = y2 - y1;
+      if (ydiff == 0) return;
+      x2 = x1 + (x2 - x1) * (frame->bend - y1) / ydiff;
       y2 = frame->bend;
       inter = 1;
     }
   if (y1 < frame->bbeg)
-    { x1 = x1 + (x2 - x1) * (frame->bbeg - y1) / (y2 - y1);
+    { // BUGFIX: Prevent divide by zero
+      double ydiff = y2 - y1;
+      if (ydiff == 0) return;
+      x1 = x1 + (x2 - x1) * (frame->bbeg - y1) / ydiff;
       y1 = frame->bbeg;
       inter = 1;
     }
@@ -330,12 +336,18 @@ static void Clip_Segment(Double_Box *seg, Double_Box *frame)
       t = y1; y1 = y2; y2 = t;
     }
   if (x2 > frame->aend)
-    { y2 = y1 + (y2 - y1) * (frame->aend - x1) / (x2 - x1);
+    { // BUGFIX: Prevent divide by zero
+      double xdiff = x2 - x1;
+      if (xdiff == 0) return;
+      y2 = y1 + (y2 - y1) * (frame->aend - x1) / xdiff;
       x2 = frame->aend;
       inter = 1;
     }
   if (x1 < frame->abeg)
-    { y1 = y1 + (y2 - y1) * (frame->abeg - x1) / (x2 - x1);
+    { // BUGFIX: Prevent divide by zero
+      double xdiff = x2 - x1;
+      if (xdiff == 0) return;
+      y1 = y1 + (y2 - y1) * (frame->abeg - x1) / xdiff;
       x1 = frame->abeg;
       inter = 1;
     }
@@ -438,12 +450,18 @@ static QuadNode *Add_To_Node(QuadNode *quad, Double_Box *frame, Double_Box *seg,
 
     if (abs(qb-qe) % 2 == 1)
       { if (qb+qe == 3)
-          { x  = (amid - seg->abeg) / (seg->aend-seg->abeg);
+          { // BUGFIX: Prevent divide by zero
+            double alen = seg->aend - seg->abeg;
+            if (alen == 0) return (quad);
+            x  = (amid - seg->abeg) / alen;
             seg->bend = seg2.bbeg = seg->bbeg + x*(seg->bend-seg->bbeg);
             seg->aend = seg2.abeg = amid;
           }
         else
-          { x  = (bmid - seg->bbeg) / (seg->bend-seg->bbeg);
+          { // BUGFIX: Prevent divide by zero
+            double blen = seg->bend - seg->bbeg;
+            if (blen == 0) return (quad);
+            x  = (bmid - seg->bbeg) / blen;
             seg->aend = seg2.abeg = seg->abeg + x*(seg->aend-seg->abeg);
             seg->bend = seg2.bbeg = bmid;
           }
@@ -457,8 +475,13 @@ static QuadNode *Add_To_Node(QuadNode *quad, Double_Box *frame, Double_Box *seg,
         return (quad);
       }
 
-    x = (bmid - seg->bbeg) / (seg->bend-seg->bbeg);
-    y = (amid - seg->abeg) / (seg->aend-seg->abeg);
+    // BUGFIX: Prevent divide by zero
+    double alen = seg->aend - seg->abeg;
+    double blen = seg->bend - seg->bbeg;
+    if (alen == 0 || blen == 0) return (quad);
+
+    x = (bmid - seg->bbeg) / blen;
+    y = (amid - seg->abeg) / alen;
     if (x == y)
       { seg->aend = seg2.abeg = amid;
         seg->bend = seg2.bbeg = seg->bbeg + x*(seg->bend-seg->bbeg);
@@ -750,6 +773,12 @@ QuadLeaf *Plot_Layer(DotPlot *plot, int ilay, Frame *query)
 { Double_Box frame;
   Double_Box qbox;
 
+  // BUGFIX: Check if layer exists (when model==NULL, layer 0 is NULL and data is in layer 1)
+  if (ilay < 0 || ilay >= plot->nlays || plot->layers[ilay] == NULL)
+    {
+      return (NULL);
+    }
+
   SEGS    = plot->layers[ilay]->segs;
   BLOCKS  = NULL;
   FREECNT = BLK_SIZE;
@@ -767,10 +796,17 @@ QuadLeaf *Plot_Layer(DotPlot *plot, int ilay, Frame *query)
   frame.aend = plot->alen;
   frame.bend = plot->blen;
 
+  printf("🔎 Plot_Layer(%d): plot=%p alen=%lld blen=%lld\n", ilay, plot, plot->alen, plot->blen);
+  printf("   Query[%.0f,%.0f %.0fx%.0f] in genome[%.0fx%.0f]\n",
+         qbox.abeg, qbox.bbeg, qbox.aend-qbox.abeg, qbox.bend-qbox.bbeg,
+         (double)plot->alen, (double)plot->blen);
+
 #ifdef DEBUG_FIND
   printf("..:");
 #endif
   QuadNode_Find(plot->layers[ilay]->qtree,&frame,&qbox);
+
+  printf("   Found %d segments\n", LIST->length);
 
   if (LIST->length > 0)
     { LIST = (QuadLeaf *) New_Quad();
@@ -1186,6 +1222,7 @@ DotPlot *createPlot(char *alnPath, int lCut, int iCut, int sCut, DotPlot *model)
   
       plot->alen = contigs1[scaffs1[nscaff1-1].fctg].sbeg + scaffs1[nscaff1-1].slen;
       plot->blen = contigs2[scaffs2[nscaff2-1].fctg].sbeg + scaffs2[nscaff2-1].slen;
+      printf("🔧 SET genome lengths: plot=%p alen=%lld blen=%lld\n", plot, plot->alen, plot->blen);
     }
 
   //  Add layer
@@ -1218,6 +1255,8 @@ DotPlot *createPlot(char *alnPath, int lCut, int iCut, int sCut, DotPlot *model)
 #ifdef DEBUG_LAYER
     printf("Initial ovls = %lld\n",novl); fflush(stdout);
 #endif
+
+    printf("Processing %lld overlaps with filters: lCut=%d, iCut=%d, sCut=%d\n", novl, lCut, iCut, sCut);
 
     k = 0;
     for (j = 0; j < novl; j++)
@@ -1290,14 +1329,23 @@ DotPlot *createPlot(char *alnPath, int lCut, int iCut, int sCut, DotPlot *model)
         printf("%d'th length = %d\n",lCut,alen); fflush(stdout);
 #endif
 
+        // BUGFIX: Prevent divide by zero and infinite loop when alen is 0 or very small
+        if (alen <= 0)
+          alen = 1;
+
         digits = 1;
-        while (1)
+        while (digits < alen && digits <= 1000000000)  // Safety limit to prevent overflow
           { if ((alen/digits)*digits < .9*alen)
               break;
             digits *= 10;
           }
-        digits /= 10;
-        alen    = (alen/digits)*digits;
+        if (digits > 1)
+          digits /= 10;
+
+        if (digits > 0)
+          alen = (alen/digits)*digits;
+        else
+          alen = 1;
 
 #ifdef DEBUG_LAYER
         printf("Adjusted length = %d\n",alen); fflush(stdout);
@@ -1335,6 +1383,14 @@ DotPlot *createPlot(char *alnPath, int lCut, int iCut, int sCut, DotPlot *model)
     layer->tspace = tspace;
     layer->novls  = novl;
     layer->segs   = segs;
+
+    printf("📊 Layer %d created with %lld segments (kept %d after filtering)\n", nlay, novl, k);
+    if (k > 0) {
+        printf("   First segment: a[%lld-%lld] b[%lld-%lld]\n",
+               segs[0].abeg, segs[0].aend, segs[0].bbeg, segs[0].bend);
+    } else {
+        printf("   ⚠️  WARNING: All %lld segments were filtered out!\n", novl);
+    }
 
     plot->layers[nlay] = layer;
     plot->nlays = nlay+1;
@@ -1393,6 +1449,21 @@ static void Free_DotGDB(DotGDB *db)
   free(db->name);
   Close_GDB(&(db->gdb));
   free(db);
+}
+
+// Accessor functions for Rust FFI
+int64 DotPlot_GetAlen(DotPlot *plot) { return plot->alen; }
+int64 DotPlot_GetBlen(DotPlot *plot) { return plot->blen; }
+int DotPlot_GetNlays(DotPlot *plot) { return plot->nlays; }
+
+// Get raw segment array for rendering in Rust
+DotSegment* DotPlot_GetSegments(DotPlot *plot, int layer, int64 *count) {
+  if (layer < 0 || layer >= plot->nlays || plot->layers[layer] == NULL) {
+    *count = 0;
+    return NULL;
+  }
+  *count = plot->layers[layer]->novls;
+  return plot->layers[layer]->segs;
 }
 
 void Free_DotPlot(DotPlot *plot)

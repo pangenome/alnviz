@@ -39,6 +39,7 @@ struct AlnViewApp {
     // View state
     view: ViewState,
     view_history: Vec<ViewState>,  // For 'z' key to go back
+    needs_initial_fit: bool,        // Flag to fit view on first render
 
     // Layer settings
     layers: Vec<LayerSettings>,
@@ -97,6 +98,7 @@ impl Default for AlnViewApp {
                 max_y: 1_000_000.0,
             },
             view_history: Vec::new(),
+            needs_initial_fit: false,
             layers: vec![LayerSettings::default()],
             num_layers: 0,
             current_file: None,
@@ -143,9 +145,8 @@ impl eframe::App for AlnViewApp {
                             self.view.max_y = blen;
                             self.view.x = 0.0;
                             self.view.y = 0.0;
-                            // Set initial scale to fit entire genome with some padding
-                            // Assuming ~800px canvas (after UI panels), add 10% padding
-                            self.view.scale = alen.max(blen) / 800.0 * 1.1;
+                            // Will fit to canvas on first render
+                            self.needs_initial_fit = true;
 
                             // Get actual number of layers from plot
                             let nlays = safe_plot.get_nlays() as usize;
@@ -389,6 +390,12 @@ impl AlnViewApp {
         );
 
         let rect = response.rect;
+
+        // Fit view to canvas on first render after loading
+        if self.needs_initial_fit && rect.width() > 0.0 && rect.height() > 0.0 {
+            self.fit_view_to_canvas(rect);
+            self.needs_initial_fit = false;
+        }
 
         // Handle interaction
         self.handle_interaction(&response, rect);
@@ -737,6 +744,15 @@ impl AlnViewApp {
 // ============================================================================
 
 impl AlnViewApp {
+    fn fit_view_to_canvas(&mut self, canvas_rect: egui::Rect) {
+        // Calculate scale to fit genome in canvas with 5% padding
+        let scale_x = self.view.max_x / (canvas_rect.width() as f64 * 0.95);
+        let scale_y = self.view.max_y / (canvas_rect.height() as f64 * 0.95);
+        self.view.scale = scale_x.max(scale_y);
+        self.view.x = 0.0;
+        self.view.y = 0.0;
+    }
+
     fn zoom(&mut self, factor: f64) {
         // Zoom by changing scale
         self.view.scale /= factor;
@@ -751,9 +767,16 @@ impl AlnViewApp {
         let genome_x = self.view.x + pixel_x * self.view.scale;
         let genome_y = self.view.y + pixel_y * self.view.scale;
 
-        // Zoom by changing scale
-        self.view.scale /= factor;
-        self.view.scale = self.view.scale.max(0.1);  // Don't zoom in too far
+        // Calculate new scale
+        let new_scale = self.view.scale / factor;
+
+        // Don't zoom out beyond where genome fills the window
+        let min_scale_x = self.view.max_x / canvas_rect.width() as f64;
+        let min_scale_y = self.view.max_y / canvas_rect.height() as f64;
+        let min_scale = min_scale_x.max(min_scale_y);
+
+        // Apply zoom with limits
+        self.view.scale = new_scale.max(0.1).max(min_scale);
 
         // Keep the mouse position at the same genome coordinate
         self.view.x = genome_x - pixel_x * self.view.scale;
@@ -777,9 +800,6 @@ impl AlnViewApp {
     }
 
     fn reset_view(&mut self) {
-        self.view.x = 0.0;
-        self.view.y = 0.0;
-        // Fit entire genome with some padding
-        self.view.scale = self.view.max_x.max(self.view.max_y) / 800.0 * 1.1;
+        self.needs_initial_fit = true;
     }
 }

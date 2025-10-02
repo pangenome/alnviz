@@ -11,6 +11,7 @@ egui = "0.28"
 rfd = "0.14"  # Native file dialogs
 env_logger = "0.11"  # Logging
 libc = "0.2"  # For FFI memory management
+rstar = "0.12"  # R*-tree for spatial indexing of alignment segments (better than quad-tree for range queries)
 
 [build-dependencies]
 cc = "1.0"

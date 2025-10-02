@@ -482,25 +482,17 @@ impl AlnViewApp {
                 let view_width = rect.width() as f64 * self.view.scale;
                 let view_height = rect.height() as f64 * self.view.scale;
 
-                let frame = ffi::Frame::new(
+                // Query R*-tree for segments in visible region
+                let visible_segs = plot.query_segments_in_region(
+                    layer_idx as i32,
                     self.view.x,
                     self.view.y,
                     view_width,
                     view_height,
                 );
 
-                // Get ALL segments for this layer (bypass quad-tree for now)
-                let all_segs = plot.get_all_segments(layer_idx as i32);
-
-                // Draw segments that are in view
-                for seg in all_segs {
-                    // Simple visibility check
-                    if seg.aend < self.view.x as i64 || seg.abeg > (self.view.x + view_width) as i64 {
-                        continue;
-                    }
-                    if seg.bend < self.view.y as i64 || seg.bbeg > (self.view.y + view_height) as i64 {
-                        continue;
-                    }
+                // Draw visible segments
+                for seg in visible_segs {
 
                     // Draw the segment as a line
                     let p1 = genome_to_screen(seg.abeg as f64, seg.bbeg as f64);

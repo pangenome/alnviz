@@ -7,6 +7,7 @@
 #![allow(non_camel_case_types)]
 
 use std::os::raw::{c_char, c_int, c_void};
+use rstar::{RTree, AABB, RTreeObject, Envelope};
 
 // ============================================================================
 // Core Data Structures
@@ -35,6 +36,7 @@ pub struct Focus {
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
 pub struct DotSegment {
     pub abeg: i64,
     pub aend: i64,
@@ -150,24 +152,89 @@ impl DotSegment {
     pub fn is_reverse(&self) -> bool {
         (self.mark & 0x1) == 0
     }
+
+    /// Get bounding box for spatial indexing
+    pub fn bbox(&self) -> AABB<[f64; 2]> {
+        let min_x = self.abeg.min(self.aend) as f64;
+        let max_x = self.abeg.max(self.aend) as f64;
+        let min_y = self.bbeg.min(self.bend) as f64;
+        let max_y = self.bbeg.max(self.bend) as f64;
+        AABB::from_corners([min_x, min_y], [max_x, max_y])
+    }
+}
+
+/// Wrapper for DotSegment that implements RTreeObject for spatial indexing
+#[derive(Debug, Clone, Copy)]
+pub struct IndexedSegment {
+    pub segment: DotSegment,
+}
+
+impl RTreeObject for IndexedSegment {
+    type Envelope = AABB<[f64; 2]>;
+
+    fn envelope(&self) -> Self::Envelope {
+        self.segment.bbox()
+    }
+}
+
+impl From<DotSegment> for IndexedSegment {
+    fn from(segment: DotSegment) -> Self {
+        IndexedSegment { segment }
+    }
 }
 
 // ============================================================================
 // Safe Wrappers
 // ============================================================================
 
-/// Safe wrapper around DotPlot pointer
+/// Safe wrapper around DotPlot pointer with spatial index
 pub struct SafePlot {
     ptr: *mut DotPlot,
+    /// R*-trees for each layer (indexed by layer number)
+    spatial_indices: Vec<RTree<IndexedSegment>>,
 }
 
 impl SafePlot {
     pub fn new(ptr: *mut DotPlot) -> Option<Self> {
         if ptr.is_null() {
-            None
-        } else {
-            Some(SafePlot { ptr })
+            return None;
         }
+
+        // Build spatial indices for all layers
+        let nlays = unsafe { DotPlot_GetNlays(ptr) };
+        let mut spatial_indices = Vec::with_capacity(nlays as usize);
+
+        println!("🌳 Building R*-trees for {} layers...", nlays);
+
+        for layer in 0..nlays {
+            // Get all segments for this layer
+            let segments = unsafe {
+                let mut count: i64 = 0;
+                let seg_ptr = DotPlot_GetSegments(ptr, layer, &mut count as *mut i64);
+                if seg_ptr.is_null() || count == 0 {
+                    &[]
+                } else {
+                    std::slice::from_raw_parts(seg_ptr, count as usize)
+                }
+            };
+
+            // Convert to indexed segments and build R*-tree
+            let indexed: Vec<IndexedSegment> = segments
+                .iter()
+                .map(|&seg| IndexedSegment::from(seg))
+                .collect();
+
+            println!("  Layer {}: {} segments", layer, indexed.len());
+            let rtree = RTree::bulk_load(indexed);
+            spatial_indices.push(rtree);
+        }
+
+        println!("✅ R*-trees built successfully!");
+
+        Some(SafePlot {
+            ptr,
+            spatial_indices,
+        })
     }
 
     pub fn as_ptr(&self) -> *mut DotPlot {
@@ -189,7 +256,8 @@ impl SafePlot {
         unsafe { DotPlot_GetNlays(self.ptr) }
     }
 
-    /// Get all segments for a layer (no quad-tree, just raw array)
+    /// Get all segments for a layer (no spatial indexing, just raw array)
+    #[allow(dead_code)]
     pub fn get_all_segments(&self, layer: i32) -> &[DotSegment] {
         unsafe {
             let mut count: i64 = 0;
@@ -200,6 +268,23 @@ impl SafePlot {
                 std::slice::from_raw_parts(ptr, count as usize)
             }
         }
+    }
+
+    /// Query segments in a rectangular region using R*-tree spatial index
+    pub fn query_segments_in_region(&self, layer: i32, x: f64, y: f64, width: f64, height: f64) -> Vec<DotSegment> {
+        if layer < 0 || layer as usize >= self.spatial_indices.len() {
+            return Vec::new();
+        }
+
+        let query_box = AABB::from_corners(
+            [x, y],
+            [x + width, y + height]
+        );
+
+        self.spatial_indices[layer as usize]
+            .locate_in_envelope(&query_box)
+            .map(|indexed| indexed.segment)
+            .collect()
     }
 
     /// Get scaffold boundaries for genome A or B (0 or 1)

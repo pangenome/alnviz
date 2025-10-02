@@ -22,6 +22,13 @@ fn main() {
         .flag("-Wno-unused-variable")
         .flag("-Wno-unused-function");
 
+    // Optimization flags
+    if cfg!(debug_assertions) {
+        build.flag("-O2");  // Moderate optimization for debug builds
+    } else {
+        build.flag("-O3");  // Full optimization for release builds
+    }
+
     // Enable ASAN in debug mode for bug hunting
     if cfg!(debug_assertions) && env::var("ASAN").is_ok() {
         build

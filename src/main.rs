@@ -763,12 +763,13 @@ impl AlnViewApp {
         let new_scale = self.view.scale / factor;
 
         // Don't zoom out beyond where genome fills the window
-        let min_scale_x = self.view.max_x / self.last_canvas_size.0 as f64;
-        let min_scale_y = self.view.max_y / self.last_canvas_size.1 as f64;
-        let min_scale = min_scale_x.max(min_scale_y);
+        // (higher scale = more zoomed out = more bp per pixel)
+        let max_scale_x = self.view.max_x / self.last_canvas_size.0 as f64;
+        let max_scale_y = self.view.max_y / self.last_canvas_size.1 as f64;
+        let max_scale = max_scale_x.max(max_scale_y);
 
-        // Apply zoom with limits
-        self.view.scale = new_scale.max(0.1).max(min_scale);
+        // Apply zoom with limits: don't zoom in too far (min 0.1) or out too far (max_scale)
+        self.view.scale = new_scale.max(0.1).min(max_scale);
     }
 
     fn zoom_at_point(&mut self, factor: f64, screen_pos: egui::Pos2, canvas_rect: egui::Rect) {
@@ -783,12 +784,13 @@ impl AlnViewApp {
         let new_scale = self.view.scale / factor;
 
         // Don't zoom out beyond where genome fills the window
-        let min_scale_x = self.view.max_x / canvas_rect.width() as f64;
-        let min_scale_y = self.view.max_y / canvas_rect.height() as f64;
-        let min_scale = min_scale_x.max(min_scale_y);
+        // (higher scale = more zoomed out = more bp per pixel)
+        let max_scale_x = self.view.max_x / canvas_rect.width() as f64;
+        let max_scale_y = self.view.max_y / canvas_rect.height() as f64;
+        let max_scale = max_scale_x.max(max_scale_y);
 
-        // Apply zoom with limits
-        self.view.scale = new_scale.max(0.1).max(min_scale);
+        // Apply zoom with limits: don't zoom in too far (min 0.1) or out too far (max_scale)
+        self.view.scale = new_scale.max(0.1).min(max_scale);
 
         // Keep the mouse position at the same genome coordinate
         self.view.x = genome_x - pixel_x * self.view.scale;

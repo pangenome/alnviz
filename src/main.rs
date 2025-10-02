@@ -745,9 +745,9 @@ impl AlnViewApp {
 
 impl AlnViewApp {
     fn fit_view_to_canvas(&mut self, canvas_rect: egui::Rect) {
-        // Calculate scale to fit genome in canvas with 5% padding
-        let scale_x = self.view.max_x / (canvas_rect.width() as f64 * 0.95);
-        let scale_y = self.view.max_y / (canvas_rect.height() as f64 * 0.95);
+        // Calculate scale to exactly fit genome in canvas
+        let scale_x = self.view.max_x / canvas_rect.width() as f64;
+        let scale_y = self.view.max_y / canvas_rect.height() as f64;
         self.view.scale = scale_x.max(scale_y);
         self.view.x = 0.0;
         self.view.y = 0.0;

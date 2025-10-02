@@ -40,6 +40,7 @@ struct AlnViewApp {
     view: ViewState,
     view_history: Vec<ViewState>,  // For 'z' key to go back
     needs_initial_fit: bool,        // Flag to fit view on first render
+    last_canvas_size: (f32, f32),   // Last canvas dimensions for zoom limits
 
     // Layer settings
     layers: Vec<LayerSettings>,
@@ -99,6 +100,7 @@ impl Default for AlnViewApp {
             },
             view_history: Vec::new(),
             needs_initial_fit: false,
+            last_canvas_size: (800.0, 600.0),
             layers: vec![LayerSettings::default()],
             num_layers: 0,
             current_file: None,
@@ -390,6 +392,9 @@ impl AlnViewApp {
         );
 
         let rect = response.rect;
+
+        // Track canvas size for zoom limits
+        self.last_canvas_size = (rect.width(), rect.height());
 
         // Fit view to canvas on first render after loading
         if self.needs_initial_fit && rect.width() > 0.0 && rect.height() > 0.0 {
@@ -754,9 +759,16 @@ impl AlnViewApp {
     }
 
     fn zoom(&mut self, factor: f64) {
-        // Zoom by changing scale
-        self.view.scale /= factor;
-        self.view.scale = self.view.scale.max(0.1);  // Don't zoom in too far
+        // Calculate new scale
+        let new_scale = self.view.scale / factor;
+
+        // Don't zoom out beyond where genome fills the window
+        let min_scale_x = self.view.max_x / self.last_canvas_size.0 as f64;
+        let min_scale_y = self.view.max_y / self.last_canvas_size.1 as f64;
+        let min_scale = min_scale_x.max(min_scale_y);
+
+        // Apply zoom with limits
+        self.view.scale = new_scale.max(0.1).max(min_scale);
     }
 
     fn zoom_at_point(&mut self, factor: f64, screen_pos: egui::Pos2, canvas_rect: egui::Rect) {

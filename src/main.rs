@@ -601,16 +601,10 @@ impl AlnViewApp {
             let view_width = rect.width() as f64 * self.view.scale;
             let view_height = rect.height() as f64 * self.view.scale;
 
-            self.view.x = (self.view.x + dx).max(0.0);
-            self.view.y = (self.view.y + dy).max(0.0);
-
-            // Only clamp on right/top if we're zoomed in
-            if view_width < self.view.max_x {
-                self.view.x = self.view.x.min(self.view.max_x - view_width);
-            }
-            if view_height < self.view.max_y {
-                self.view.y = self.view.y.min(self.view.max_y - view_height);
-            }
+            // Clamp to genome bounds (0,0) to (max_x, max_y)
+            // When zoomed out, this prevents panning beyond genome edges
+            self.view.x = (self.view.x + dx).max(0.0).min((self.view.max_x - view_width).max(0.0));
+            self.view.y = (self.view.y + dy).max(0.0).min((self.view.max_y - view_height).max(0.0));
         }
 
         // Scroll wheel zoom
@@ -800,17 +794,9 @@ impl AlnViewApp {
         let view_width = canvas_rect.width() as f64 * self.view.scale;
         let view_height = canvas_rect.height() as f64 * self.view.scale;
 
-        // Don't allow panning beyond left/bottom edges
-        self.view.x = self.view.x.max(0.0);
-        self.view.y = self.view.y.max(0.0);
-
-        // Don't allow panning beyond right/top edges (but allow zooming out to see whole genome)
-        if view_width < self.view.max_x {
-            self.view.x = self.view.x.min(self.view.max_x - view_width);
-        }
-        if view_height < self.view.max_y {
-            self.view.y = self.view.y.min(self.view.max_y - view_height);
-        }
+        // Clamp to genome bounds (handle both zoomed in and zoomed out)
+        self.view.x = self.view.x.max(0.0).min((self.view.max_x - view_width).max(0.0));
+        self.view.y = self.view.y.max(0.0).min((self.view.max_y - view_height).max(0.0));
     }
 
     fn reset_view(&mut self) {

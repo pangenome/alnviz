@@ -1,19 +1,56 @@
 mod ffi;
+mod aln_reader;
+mod rust_plot;
 
 use eframe::egui;
+use rust_plot::RustPlot;
 use std::ffi::CString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Receiver};
 use std::thread;
+use clap::Parser;
 
 // Wrapper to make raw pointer Send (UNSAFE but necessary for FFI)
 struct SendPtr(*mut ffi::DotPlot);
 unsafe impl Send for SendPtr {}
 
+/// ALNview - Alignment viewer for FASTGA .1aln files
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// Path to .1aln file to load (if not provided, opens GUI)
+    #[clap(value_name = "FILE")]
+    file: Option<PathBuf>,
+
+    /// Create and save plot as PNG (requires file argument)
+    #[clap(long, value_name = "OUTPUT")]
+    plot: Option<PathBuf>,
+
+    /// Print alignment statistics only (no GUI)
+    #[clap(long)]
+    stats: bool,
+}
+
 fn main() -> Result<(), eframe::Error> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
+    let args = Args::parse();
+
+    // CLI mode: if file is provided with --stats or --plot
+    if let Some(ref file) = args.file {
+        if args.stats || args.plot.is_some() {
+            match run_cli_mode(file, args.plot.as_ref(), args.stats) {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
+    // GUI mode
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])
@@ -21,11 +58,81 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
 
+    let mut app = AlnViewApp::default();
+
+    // If file was provided, load it on startup
+    if let Some(file) = args.file {
+        app.current_file = Some(file.clone());
+        app.load_file_async(file);
+    }
+
     eframe::run_native(
         "ALNview",
         options,
-        Box::new(|_cc| Ok(Box::new(AlnViewApp::default()))),
+        Box::new(move |_cc| Ok(Box::new(app))),
     )
+}
+
+/// Run CLI mode: read .1aln file and print stats or create plot
+fn run_cli_mode(
+    file: &PathBuf,
+    output_plot: Option<&PathBuf>,
+    print_stats: bool,
+) -> anyhow::Result<()> {
+    use aln_reader::AlnFile;
+
+    println!("Reading .1aln file: {}", file.display());
+
+    let mut aln_file = AlnFile::open(file)?;
+
+    println!("Query sequences: {}", aln_file.query_sequences.len());
+    println!("Target sequences: {}", aln_file.target_sequences.len());
+
+    if print_stats {
+        println!("\nReading alignment records...");
+        let records = aln_file.read_all_records()?;
+        println!("Total alignments: {}", records.len());
+
+        if !records.is_empty() {
+            let mut total_identity = 0.0;
+            let mut total_length = 0u64;
+            let mut forward_count = 0;
+            let mut reverse_count = 0;
+
+            for rec in &records {
+                let identity = aln_reader::calculate_identity(rec);
+                let length = (rec.query_end - rec.query_start) as u64;
+                total_identity += identity * length as f64;
+                total_length += length;
+
+                if rec.reverse == 0 {
+                    forward_count += 1;
+                } else {
+                    reverse_count += 1;
+                }
+            }
+
+            let avg_identity = if total_length > 0 {
+                total_identity / total_length as f64
+            } else {
+                0.0
+            };
+
+            println!("\nAlignment Statistics:");
+            println!("  Average identity: {:.2}%", avg_identity);
+            println!("  Forward alignments: {}", forward_count);
+            println!("  Reverse alignments: {}", reverse_count);
+            println!("  Total aligned bases: {}", total_length);
+        }
+    }
+
+    if let Some(output_path) = output_plot {
+        println!("\nCreating plot: {}", output_path.display());
+        println!("Note: Plot generation not yet implemented in pure Rust mode.");
+        println!("Use GUI mode or C backend for now.");
+    }
+
+    Ok(())
 }
 
 // ============================================================================
@@ -34,7 +141,7 @@ fn main() -> Result<(), eframe::Error> {
 
 struct AlnViewApp {
     // Data
-    plot: Option<ffi::SafePlot>,
+    plot: Option<RustPlot>,
 
     // View state
     view: ViewState,
@@ -52,7 +159,7 @@ struct AlnViewApp {
 
     // Loading state
     loading: Arc<Mutex<LoadingState>>,
-    plot_receiver: Option<Receiver<Result<SendPtr, String>>>,
+    plot_receiver: Option<Receiver<Result<RustPlot, String>>>,
 
     // Interaction state
     box_zoom_start: Option<egui::Pos2>,  // Shift+drag box zoom
@@ -135,39 +242,35 @@ impl eframe::App for AlnViewApp {
         if let Some(ref receiver) = self.plot_receiver {
             if let Ok(result) = receiver.try_recv() {
                 match result {
-                    Ok(SendPtr(plot_ptr)) => {
-                        if let Some(safe_plot) = ffi::SafePlot::new(plot_ptr) {
-                            // Extract real genome lengths
-                            let alen = safe_plot.get_alen() as f64;
-                            let blen = safe_plot.get_blen() as f64;
-                            println!("✅ Plot loaded successfully! Genome lengths: {} x {}", alen, blen);
+                    Ok(rust_plot) => {
+                        // Extract real genome lengths
+                        let alen = rust_plot.get_alen() as f64;
+                        let blen = rust_plot.get_blen() as f64;
+                        println!("✅ Plot loaded successfully! Genome lengths: {} x {}", alen, blen);
 
-                            // Update view with actual genome dimensions
-                            self.view.max_x = alen;
-                            self.view.max_y = blen;
-                            self.view.x = 0.0;
-                            self.view.y = 0.0;
-                            // Will fit to canvas on first render
-                            self.needs_initial_fit = true;
+                        // Update view with actual genome dimensions
+                        self.view.max_x = alen;
+                        self.view.max_y = blen;
+                        self.view.x = 0.0;
+                        self.view.y = 0.0;
+                        // Will fit to canvas on first render
+                        self.needs_initial_fit = true;
 
-                            // Get actual number of layers from plot
-                            let nlays = safe_plot.get_nlays() as usize;
-                            println!("  Plot has {} layers", nlays);
+                        // Get actual number of layers from plot
+                        let nlays = rust_plot.get_nlays() as usize;
+                        println!("  Plot has {} layers", nlays);
 
-                            self.plot = Some(safe_plot);
-                            self.num_layers = nlays;
+                        self.num_layers = nlays;
 
-                            // Create layer settings for all layers
-                            self.layers = (0..nlays).map(|i| LayerSettings {
-                                visible: true,
-                                name: format!("Layer {}", i),
-                                ..Default::default()
-                            }).collect();
+                        // Create layer settings for all layers
+                        self.layers = (0..nlays).map(|i| LayerSettings {
+                            visible: true,
+                            name: format!("Layer {}", i),
+                            ..Default::default()
+                        }).collect();
 
-                            *self.loading.lock().unwrap() = LoadingState::Success("Loaded successfully".to_string());
-                        } else {
-                            *self.loading.lock().unwrap() = LoadingState::Failed("C returned NULL".to_string());
-                        }
+                        self.plot = Some(rust_plot);
+                        *self.loading.lock().unwrap() = LoadingState::Success("Loaded successfully".to_string());
                     }
                     Err(e) => {
                         *self.loading.lock().unwrap() = LoadingState::Failed(e);
@@ -493,13 +596,15 @@ impl AlnViewApp {
 
                 // Draw visible segments
                 for seg in visible_segs {
-
                     // Draw the segment as a line
                     let p1 = genome_to_screen(seg.abeg as f64, seg.bbeg as f64);
                     let p2 = genome_to_screen(seg.aend as f64, seg.bend as f64);
 
-                    // Forward (positive slope) = green, Reverse (negative slope) = red
-                    let is_forward = (seg.bend - seg.bbeg) * (seg.aend - seg.abeg) > 0;
+                    // Forward = same direction (both increasing or both decreasing)
+                    // Reverse = opposite direction
+                    let is_forward = !seg.reverse;
+
+                    // Use green for forward, red for reverse (like C version)
                     let color = if is_forward {
                         egui::Color32::from_rgb(0, 255, 0)  // Green for forward
                     } else {
@@ -680,51 +785,25 @@ impl AlnViewApp {
 
         println!("🔍 Starting async load: {}", path.display());
 
-        let path_str = match path.to_str() {
-            Some(s) => s.to_string(),
-            None => {
-                *loading.lock().unwrap() = LoadingState::Failed("Invalid path encoding".to_string());
-                return;
-            }
-        };
-
         // Create channel for receiving plot
         let (tx, rx) = channel();
         self.plot_receiver = Some(rx);
-        self.current_file = Some(path);
+        self.current_file = Some(path.clone());
 
-        // Spawn background thread for loading
+        // Spawn background thread for loading using Rust reader
         thread::spawn(move || {
-            println!("🧵 Background thread: Loading file...");
+            println!("🧵 Background thread: Loading file with Rust reader...");
 
-            let c_path = match CString::new(path_str.as_str()) {
-                Ok(s) => s,
-                Err(e) => {
-                    let _ = tx.send(Err(format!("Path contains null byte: {}", e)));
-                    *loading.lock().unwrap() = LoadingState::Failed("Path contains null byte".to_string());
-                    return;
+            match RustPlot::from_file(&path) {
+                Ok(plot) => {
+                    println!("✅ Rust plot loaded successfully!");
+                    let _ = tx.send(Ok(plot));
                 }
-            };
-
-            println!("📞 Calling C createPlot()...");
-
-            let plot_ptr = unsafe {
-                ffi::createPlot(
-                    c_path.as_ptr(),
-                    0,  // lCut
-                    0,  // iCut
-                    0,  // sCut
-                    std::ptr::null_mut(),
-                )
-            };
-
-            println!("📞 C createPlot() returned: {:?}", plot_ptr);
-
-            if plot_ptr.is_null() {
-                let _ = tx.send(Err(format!("Failed to load: {} (C returned NULL)", path_str)));
-            } else {
-                println!("✅ Sending plot to main thread via channel");
-                let _ = tx.send(Ok(SendPtr(plot_ptr)));
+                Err(e) => {
+                    let error_msg = format!("Failed to load {}: {}", path.display(), e);
+                    eprintln!("❌ {}", error_msg);
+                    let _ = tx.send(Err(error_msg));
+                }
             }
         });
     }

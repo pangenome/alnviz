@@ -12,6 +12,9 @@ rfd = "0.14"  # Native file dialogs
 env_logger = "0.11"  # Logging
 libc = "0.2"  # For FFI memory management
 rstar = "0.12"  # R*-tree for spatial indexing of alignment segments (better than quad-tree for range queries)
+fastga-rs = { git = "https://github.com/pangenome/fastga-rs.git", rev = "329c164" }  # For reading .1aln files
+clap = { version = "4.5", features = ["derive"] }  # CLI argument parsing
+anyhow = "1.0"  # Error handling
 
 [build-dependencies]
 cc = "1.0"

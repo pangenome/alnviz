@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use sha2::{Sha256, Digest};
 
 /// Test that rendering produces consistent output
 #[test]
@@ -16,7 +17,7 @@ fn test_render_test_1aln_matches_golden() {
 
     // Run alnview to render the plot
     let status = Command::new("cargo")
-        .args(&["run", "--release", "--", test.1aln", "--plot", output_path.to_str().unwrap()])
+        .args(&["run", "--release", "--", "test.1aln", "--plot", output_path.to_str().unwrap()])
         .status()
         .expect("Failed to run alnview");
 
@@ -49,12 +50,9 @@ fn test_render_test_1aln_matches_golden() {
     fs::remove_file(output_path).ok();
 }
 
-/// Simple SHA-256 hash function
+/// SHA-256 hash function
 fn sha256_digest(data: &[u8]) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    data.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    format!("{:x}", hasher.finalize())
 }

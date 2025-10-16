@@ -1,0 +1,89 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [ main, rust ]
+  pull_request:
+    branches: [ main, rust ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v4
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+          libxkbcommon-dev libssl-dev
+
+    - name: Check formatting
+      run: cargo fmt -- --check
+
+    - name: Run clippy
+      run: cargo clippy -- -D warnings
+
+    - name: Build
+      run: cargo build --verbose
+
+    - name: Build release
+      run: cargo build --release --verbose
+
+    - name: Run unit tests
+      run: cargo test --lib --verbose
+
+    - name: Run integration tests (non-golden)
+      run: cargo test --test '*' --exclude golden_tests --verbose
+
+    # Golden tests are slow and require test.1aln file
+    # Skip them in CI for now unless we add the test file to the repo
+    # - name: Run golden tests
+    #   run: cargo test --test golden_tests --verbose
+
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+          libxkbcommon-dev libssl-dev
+
+    - name: Check
+      run: cargo check --all-features

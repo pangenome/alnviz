@@ -17,6 +17,9 @@ clap = { version = "4.5", features = ["derive"] }  # CLI argument parsing
 anyhow = "1.0"  # Error handling
 image = "0.25"  # For rendering to PNG files
 
+[dev-dependencies]
+sha2 = "0.10"  # For golden file checksums in tests
+
 [profile.dev]
 opt-level = 1  # Slightly faster debug builds
 

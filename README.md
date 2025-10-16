@@ -8,6 +8,9 @@ A fast, interactive alignment viewer for pangenome analysis.
 
 **alnviz** is a pure Rust implementation of an alignment visualization tool, built on the design of Gene Myers' [ALNVIEW](https://github.com/thegenemyers/ALNVIEW). It provides fast, interactive exploration of genome-to-genome alignments produced by [FASTGA](https://github.com/thegenemyers/FASTGA).
 
+![Example alignment visualization](images/example_alignment.png)
+*Example alignment plot showing forward alignments (green) and reverse complement alignments (red). Distinctive inversion patterns are clearly visible.*
+
 ### Key Features
 
 - 🦀 **Pure Rust** - No C dependencies, fast compilation, memory safe

@@ -1,8 +1,10 @@
 mod aln_reader;
 mod rust_plot;
+mod sequence_filter;
 
 use eframe::egui;
 use rust_plot::RustPlot;
+use sequence_filter::SequenceFilter;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Receiver};
@@ -24,6 +26,22 @@ struct Args {
     /// Print alignment statistics only (no GUI)
     #[clap(long)]
     stats: bool,
+
+    /// Filter query sequences by name/prefix (comma-separated)
+    #[clap(long, value_name = "NAMES")]
+    query_filter: Option<String>,
+
+    /// Filter target sequences by name/prefix (comma-separated)
+    #[clap(long, value_name = "NAMES")]
+    target_filter: Option<String>,
+
+    /// Filter query sequences by range (e.g., "0-5")
+    #[clap(long, value_name = "RANGE")]
+    query_range: Option<String>,
+
+    /// Filter target sequences by range (e.g., "0-5")
+    #[clap(long, value_name = "RANGE")]
+    target_range: Option<String>,
 }
 
 fn main() -> Result<(), eframe::Error> {
@@ -34,7 +52,23 @@ fn main() -> Result<(), eframe::Error> {
     // CLI mode: if file is provided with --stats or --plot
     if let Some(ref file) = args.file {
         if args.stats || args.plot.is_some() {
-            match run_cli_mode(file, args.plot.as_ref(), args.stats) {
+            // Parse filters
+            let query_filter = match parse_filters(args.query_filter.as_deref(), args.query_range.as_deref()) {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("Error parsing query filter: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            let target_filter = match parse_filters(args.target_filter.as_deref(), args.target_range.as_deref()) {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("Error parsing target filter: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            match run_cli_mode(file, args.plot.as_ref(), args.stats, &query_filter, &target_filter) {
                 Ok(_) => return Ok(()),
                 Err(e) => {
                     eprintln!("Error: {}", e);
@@ -67,11 +101,33 @@ fn main() -> Result<(), eframe::Error> {
     )
 }
 
+/// Parse filters from CLI arguments
+fn parse_filters(
+    names_opt: Option<&str>,
+    range_opt: Option<&str>,
+) -> anyhow::Result<SequenceFilter> {
+    let mut filter = SequenceFilter::new();
+
+    if let Some(names) = names_opt {
+        filter = SequenceFilter::from_names(names);
+    }
+
+    if let Some(range) = range_opt {
+        let range_filter = SequenceFilter::from_range(range)?;
+        // Merge filters (either names OR range matches)
+        filter.range = range_filter.range;
+    }
+
+    Ok(filter)
+}
+
 /// Run CLI mode: read .1aln file and print stats or create plot
 fn run_cli_mode(
     file: &PathBuf,
     output_plot: Option<&PathBuf>,
     print_stats: bool,
+    query_filter: &SequenceFilter,
+    target_filter: &SequenceFilter,
 ) -> anyhow::Result<()> {
     use aln_reader::AlnFile;
 
@@ -122,7 +178,17 @@ fn run_cli_mode(
 
     if let Some(output_path) = output_plot {
         println!("\nRendering plot to: {}", output_path.display());
-        let plot = RustPlot::from_file(file)?;
+        let mut plot = RustPlot::from_file(file)?;
+
+        // Apply filters if specified
+        if !query_filter.is_empty() || !target_filter.is_empty() {
+            println!("Applying filters...");
+            plot = plot.with_filters(query_filter, target_filter)?;
+            println!("  Filtered to {} query x {} target sequences",
+                plot.query_sequences.len(), plot.target_sequences.len());
+            println!("  {} segments remain", plot.segments.len());
+        }
+
         render_plot_to_png(&plot, output_path, 1200, 1200)?;
         println!("✅ Plot saved successfully!");
     }

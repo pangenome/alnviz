@@ -1,7 +1,9 @@
 // Pure Rust implementation of plot data structures
 use crate::aln_reader::{AlnFile, AlnRecord};
+use crate::sequence_filter::SequenceFilter;
 use anyhow::Result;
 use std::path::Path;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct AlignmentSegment {
@@ -202,5 +204,136 @@ impl RustPlot {
             })
             .cloned()
             .collect()
+    }
+
+    /// Apply sequence filters to create a subset view
+    /// Returns a new RustPlot with only segments involving selected sequences
+    pub fn with_filters(&self, query_filter: &SequenceFilter, target_filter: &SequenceFilter) -> Result<Self> {
+        // Get matching sequence indices
+        let query_indices = query_filter.matching_indices(&self.query_sequences);
+        let target_indices = target_filter.matching_indices(&self.target_sequences);
+
+        // If both filters are empty, return clone
+        if query_indices.len() == self.query_sequences.len() &&
+           target_indices.len() == self.target_sequences.len() {
+            return Ok(self.clone());
+        }
+
+        // Filter and re-index sequences
+        let mut new_query_sequences = Vec::new();
+        let mut new_query_lengths = Vec::new();
+        let mut old_to_new_query: Vec<Option<usize>> = vec![None; self.query_sequences.len()];
+
+        for (old_idx, name) in self.query_sequences.iter().enumerate() {
+            if query_indices.contains(&old_idx) {
+                let new_idx = new_query_sequences.len();
+                old_to_new_query[old_idx] = Some(new_idx);
+                new_query_sequences.push(name.clone());
+                new_query_lengths.push(self.query_lengths[old_idx]);
+            }
+        }
+
+        let mut new_target_sequences = Vec::new();
+        let mut new_target_lengths = Vec::new();
+        let mut old_to_new_target: Vec<Option<usize>> = vec![None; self.target_sequences.len()];
+
+        for (old_idx, name) in self.target_sequences.iter().enumerate() {
+            if target_indices.contains(&old_idx) {
+                let new_idx = new_target_sequences.len();
+                old_to_new_target[old_idx] = Some(new_idx);
+                new_target_sequences.push(name.clone());
+                new_target_lengths.push(self.target_lengths[old_idx]);
+            }
+        }
+
+        // Recalculate boundaries for filtered sequences
+        let mut new_query_boundaries = Vec::new();
+        let mut cumulative = 0i64;
+        for &len in &new_query_lengths {
+            new_query_boundaries.push(cumulative);
+            cumulative += len;
+        }
+        new_query_boundaries.push(cumulative);
+        let new_query_genome_len = cumulative;
+
+        let mut new_target_boundaries = Vec::new();
+        cumulative = 0;
+        for &len in &new_target_lengths {
+            new_target_boundaries.push(cumulative);
+            cumulative += len;
+        }
+        new_target_boundaries.push(cumulative);
+        let new_target_genome_len = cumulative;
+
+        // Filter and re-map segments
+        // We need to remap coordinates to the new filtered coordinate system
+        let mut new_segments = Vec::new();
+
+        for seg in &self.segments {
+            // Find which sequence this segment belongs to
+            let query_idx = self.find_sequence_index(&self.query_boundaries, seg.abeg);
+            let target_idx = self.find_sequence_index(&self.target_boundaries, seg.bbeg.min(seg.bend));
+
+            // Check if both sequences are in our filter
+            if let (Some(new_qidx), Some(new_tidx)) = (
+                old_to_new_query.get(query_idx).and_then(|&x| x),
+                old_to_new_target.get(target_idx).and_then(|&x| x),
+            ) {
+                // Remap coordinates to new coordinate system
+                let old_q_offset = self.query_boundaries[query_idx];
+                let new_q_offset = new_query_boundaries[new_qidx];
+                let q_delta = new_q_offset - old_q_offset;
+
+                let old_t_offset = self.target_boundaries[target_idx];
+                let new_t_offset = new_target_boundaries[new_tidx];
+                let t_delta = new_t_offset - old_t_offset;
+
+                new_segments.push(AlignmentSegment {
+                    abeg: seg.abeg + q_delta,
+                    aend: seg.aend + q_delta,
+                    bbeg: seg.bbeg + t_delta,
+                    bend: seg.bend + t_delta,
+                    reverse: seg.reverse,
+                });
+            }
+        }
+
+        Ok(Self {
+            query_sequences: new_query_sequences,
+            target_sequences: new_target_sequences,
+            query_lengths: new_query_lengths,
+            target_lengths: new_target_lengths,
+            query_genome_len: new_query_genome_len,
+            target_genome_len: new_target_genome_len,
+            segments: new_segments,
+            query_boundaries: new_query_boundaries,
+            target_boundaries: new_target_boundaries,
+        })
+    }
+
+    /// Find which sequence a genome coordinate belongs to
+    fn find_sequence_index(&self, boundaries: &[i64], coord: i64) -> usize {
+        for i in 0..boundaries.len().saturating_sub(1) {
+            if coord >= boundaries[i] && coord < boundaries[i + 1] {
+                return i;
+            }
+        }
+        boundaries.len().saturating_sub(2).max(0)
+    }
+}
+
+impl Clone for RustPlot {
+    fn clone(&self) -> Self {
+        Self {
+            query_sequences: self.query_sequences.clone(),
+            target_sequences: self.target_sequences.clone(),
+            query_lengths: self.query_lengths.clone(),
+            target_lengths: self.target_lengths.clone(),
+            query_genome_len: self.query_genome_len,
+            target_genome_len: self.target_genome_len,
+            segments: self.segments.clone(),
+            query_boundaries: self.query_boundaries.clone(),
+            target_boundaries: self.target_boundaries.clone(),
+        }
     }
 }

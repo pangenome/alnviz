@@ -214,8 +214,8 @@ fn render_plot_to_png(
     use image::{Rgba, RgbaImage};
     use imageproc::drawing::draw_text_mut;
 
-    // Add margin for labels (80px left for y-axis labels, 100px bottom for x-axis labels)
-    let margin_left = 80;
+    // Add margin for labels (10px left padding, 100px bottom for x-axis labels)
+    let margin_left = 10;
     let margin_bottom = 100;
     let plot_width = width - margin_left;
     let plot_height = height - margin_bottom;
@@ -313,20 +313,22 @@ fn render_plot_to_png(
             }
         }
 
-        // Draw sequence name label on Y-axis (natural orientation)
+        // Draw sequence name label horizontally at the bottom of the boundary line
+        // This keeps it visible as you scan across the plot
         if idx < plot.target_sequences.len() {
             let name = &plot.target_sequences[idx];
-            // Truncate long names
-            let display_name = if name.len() > 12 {
-                format!("{}...", &name[..9])
+            // Truncate long names for display
+            let display_name = if name.len() > 15 {
+                format!("{}...", &name[..12])
             } else {
                 name.to_string()
             };
 
-            let label_x = 5;
-            let label_y = py - 5;
+            // Position at left edge, just below the boundary line
+            let label_x = (margin_left + 5) as i32;
+            let label_y = py + 2; // Just below the line
 
-            if label_y >= 0 && label_y < plot_height as i32 {
+            if label_y >= 0 && label_y < plot_height as i32 - 10 {
                 draw_text_mut(
                     &mut img,
                     Rgba([200, 200, 200, 255]),
@@ -434,6 +436,14 @@ struct AlnViewApp {
     box_zoom_start: Option<egui::Pos2>, // Shift+drag box zoom
     #[allow(dead_code)]
     selected_segment: Option<usize>, // For x/X key selection (future feature)
+
+    // Cursor position info (for display in layers panel)
+    cursor_query_name: String,
+    cursor_query_pos: i64,
+    cursor_target_name: String,
+    cursor_target_pos: i64,
+    cursor_genome_x: f64,
+    cursor_genome_y: f64,
 }
 
 #[derive(Clone)]
@@ -486,6 +496,12 @@ impl Default for AlnViewApp {
             plot_receiver: None,
             box_zoom_start: None,
             selected_segment: None,
+            cursor_query_name: String::new(),
+            cursor_query_pos: 0,
+            cursor_target_name: String::new(),
+            cursor_target_pos: 0,
+            cursor_genome_x: 0.0,
+            cursor_genome_y: 0.0,
         }
     }
 }
@@ -638,6 +654,25 @@ impl eframe::App for AlnViewApp {
 
                 ui.separator();
                 ui.label(format!("Scale: {:.1} bp/px", self.view.scale));
+
+                ui.separator();
+                ui.heading("Cursor Position");
+                ui.separator();
+
+                // Display cursor information
+                if !self.cursor_query_name.is_empty() {
+                    ui.label(egui::RichText::new("Query:").strong());
+                    ui.label(format!("  {}", truncate_name(&self.cursor_query_name, 30)));
+                    ui.label(format!("  Position: {} bp (local)", self.cursor_query_pos));
+                    ui.label(format!("  Genome: {:.0} bp", self.cursor_genome_x));
+                    ui.add_space(5.0);
+                    ui.label(egui::RichText::new("Target:").strong());
+                    ui.label(format!("  {}", truncate_name(&self.cursor_target_name, 30)));
+                    ui.label(format!("  Position: {} bp (local)", self.cursor_target_pos));
+                    ui.label(format!("  Genome: {:.0} bp", self.cursor_genome_y));
+                } else {
+                    ui.label("Move cursor over plot");
+                }
             });
 
         // Status bar
@@ -900,7 +935,7 @@ impl AlnViewApp {
         // Draw scale/axes
         self.draw_axes(ui, &painter, rect);
 
-        // Draw hover tooltip with sequence info
+        // Update cursor position info (displayed in layers panel)
         if let Some(ref plot) = self.plot {
             if let Some(hover_pos) = response.hover_pos() {
                 // Convert screen position to genome coordinates
@@ -916,23 +951,13 @@ impl AlnViewApp {
                 let (_target_idx, target_name, target_local) =
                     plot.target_coord_to_sequence(genome_y as i64);
 
-                // Truncate long names for tooltip
-                let query_short = truncate_name(&query_name, 50);
-                let target_short = truncate_name(&target_name, 50);
-
-                // Show tooltip
-                response.on_hover_ui(|ui| {
-                    ui.set_max_width(400.0);
-                    ui.label(egui::RichText::new("Query:").strong());
-                    ui.label(format!("  {query_short}"));
-                    ui.label(format!("  Position: {query_local} bp (local)"));
-                    ui.label(format!("  Genome: {genome_x:.0} bp"));
-                    ui.separator();
-                    ui.label(egui::RichText::new("Target:").strong());
-                    ui.label(format!("  {target_short}"));
-                    ui.label(format!("  Position: {target_local} bp (local)"));
-                    ui.label(format!("  Genome: {genome_y:.0} bp"));
-                });
+                // Update cursor info fields (displayed in layers panel)
+                self.cursor_query_name = query_name;
+                self.cursor_query_pos = query_local;
+                self.cursor_target_name = target_name;
+                self.cursor_target_pos = target_local;
+                self.cursor_genome_x = genome_x;
+                self.cursor_genome_y = genome_y;
             }
         }
     }

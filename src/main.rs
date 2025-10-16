@@ -210,7 +210,15 @@ fn render_plot_to_png(
     width: u32,
     height: u32,
 ) -> anyhow::Result<()> {
+    use ab_glyph::{FontRef, PxScale};
     use image::{Rgba, RgbaImage};
+    use imageproc::drawing::draw_text_mut;
+
+    // Add margin for labels (80px left for y-axis labels, 100px bottom for x-axis labels)
+    let margin_left = 80;
+    let margin_bottom = 100;
+    let plot_width = width - margin_left;
+    let plot_height = height - margin_bottom;
 
     let mut img = RgbaImage::new(width, height);
 
@@ -219,20 +227,118 @@ fn render_plot_to_png(
         *pixel = Rgba([0, 0, 0, 255]);
     }
 
+    // Load font (using embedded DejaVu Sans)
+    let font_data = include_bytes!("../fonts/DejaVuSans.ttf");
+    let font = FontRef::try_from_slice(font_data)
+        .map_err(|e| anyhow::anyhow!("Failed to load font: {}", e))?;
+
+    let small_text_scale = PxScale::from(10.0);
+
     let alen = plot.get_alen() as f64;
     let blen = plot.get_blen() as f64;
 
-    // Calculate scale to fit entire genome
-    let scale_x = alen / width as f64;
-    let scale_y = blen / height as f64;
+    // Calculate scale to fit entire genome in the plot area (excluding margins)
+    let scale_x = alen / plot_width as f64;
+    let scale_y = blen / plot_height as f64;
     let scale = scale_x.max(scale_y);
 
-    // Genome to pixel mapping
+    // Genome to pixel mapping (accounting for margins)
     let genome_to_pixel = |gx: f64, gy: f64| -> (i32, i32) {
-        let px = (gx / scale) as i32;
-        let py = (height as i32) - (gy / scale) as i32 - 1; // Flip Y
+        let px = margin_left as i32 + (gx / scale) as i32;
+        let py = (plot_height as i32) - (gy / scale) as i32 - 1; // Flip Y
         (px, py)
     };
+
+    // Draw query sequence boundaries (vertical lines) and labels
+    let query_boundaries = plot.get_scaffold_boundaries(0);
+    for (idx, &pos) in query_boundaries.iter().enumerate() {
+        let (px, _) = genome_to_pixel(pos as f64, 0.0);
+
+        // Draw vertical boundary line
+        if px >= margin_left as i32 && px < width as i32 {
+            for y in 0..plot_height {
+                if let Some(pixel) = img.get_pixel_mut_checked(px as u32, y) {
+                    *pixel = Rgba([100, 100, 100, 255]); // Gray
+                }
+            }
+        }
+
+        // Draw sequence name label (rotated 90 degrees on X-axis)
+        // We'll draw text rotated by drawing it vertically in the bottom margin
+        if idx < plot.query_sequences.len() {
+            let name = &plot.query_sequences[idx];
+            // Truncate long names for display
+            let display_name = if name.len() > 15 {
+                format!("{}...", &name[..12])
+            } else {
+                name.to_string()
+            };
+
+            // Position: draw vertically starting at the boundary line
+            let label_x = px + 5;
+            let label_y = (plot_height + 5) as i32;
+
+            // Draw rotated text by creating a temporary image and rotating it
+            // For simplicity, we'll just draw it vertically character by character
+            if label_x >= margin_left as i32 && label_x < (width - 20) as i32 {
+                for (i, ch) in display_name.chars().enumerate() {
+                    let char_y = label_y + (i as i32 * 11);
+                    if char_y < height as i32 - 5 {
+                        draw_text_mut(
+                            &mut img,
+                            Rgba([200, 200, 200, 255]),
+                            label_x,
+                            char_y,
+                            small_text_scale,
+                            &font,
+                            &ch.to_string(),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    // Draw target sequence boundaries (horizontal lines) and labels
+    let target_boundaries = plot.get_scaffold_boundaries(1);
+    for (idx, &pos) in target_boundaries.iter().enumerate() {
+        let (_, py) = genome_to_pixel(0.0, pos as f64);
+
+        // Draw horizontal boundary line
+        if py >= 0 && py < plot_height as i32 {
+            for x in margin_left..width {
+                if let Some(pixel) = img.get_pixel_mut_checked(x, py as u32) {
+                    *pixel = Rgba([100, 100, 100, 255]); // Gray
+                }
+            }
+        }
+
+        // Draw sequence name label on Y-axis (natural orientation)
+        if idx < plot.target_sequences.len() {
+            let name = &plot.target_sequences[idx];
+            // Truncate long names
+            let display_name = if name.len() > 12 {
+                format!("{}...", &name[..9])
+            } else {
+                name.to_string()
+            };
+
+            let label_x = 5;
+            let label_y = py - 5;
+
+            if label_y >= 0 && label_y < plot_height as i32 {
+                draw_text_mut(
+                    &mut img,
+                    Rgba([200, 200, 200, 255]),
+                    label_x,
+                    label_y,
+                    small_text_scale,
+                    &font,
+                    &display_name,
+                );
+            }
+        }
+    }
 
     // Draw all segments for layer 0
     let segments = plot.query_segments_in_region(0, 0.0, 0.0, alen, blen);

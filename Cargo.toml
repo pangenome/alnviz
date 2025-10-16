@@ -20,6 +20,8 @@ fastga-rs = { git = "https://github.com/pangenome/fastga-rs.git", rev = "329c164
 clap = { version = "4.5", features = ["derive"] }  # CLI argument parsing
 anyhow = "1.0"  # Error handling
 image = "0.25"  # For rendering to PNG files
+imageproc = "0.25"  # For drawing text and shapes on images
+ab_glyph = "0.2"  # TrueType font rendering (compatible with imageproc)
 
 [dev-dependencies]
 sha2 = "0.10"  # For golden file checksums in tests

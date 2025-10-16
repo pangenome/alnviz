@@ -1,19 +1,13 @@
-mod ffi;
 mod aln_reader;
 mod rust_plot;
 
 use eframe::egui;
 use rust_plot::RustPlot;
-use std::ffi::CString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Receiver};
 use std::thread;
 use clap::Parser;
-
-// Wrapper to make raw pointer Send (UNSAFE but necessary for FFI)
-struct SendPtr(*mut ffi::DotPlot);
-unsafe impl Send for SendPtr {}
 
 /// ALNview - Alignment viewer for FASTGA .1aln files
 #[derive(Parser, Debug)]
@@ -127,12 +121,101 @@ fn run_cli_mode(
     }
 
     if let Some(output_path) = output_plot {
-        println!("\nCreating plot: {}", output_path.display());
-        println!("Note: Plot generation not yet implemented in pure Rust mode.");
-        println!("Use GUI mode or C backend for now.");
+        println!("\nRendering plot to: {}", output_path.display());
+        let plot = RustPlot::from_file(file)?;
+        render_plot_to_png(&plot, output_path, 1200, 1200)?;
+        println!("✅ Plot saved successfully!");
     }
 
     Ok(())
+}
+
+/// Render a plot to a PNG file for testing/golden file generation
+fn render_plot_to_png(
+    plot: &RustPlot,
+    output_path: &PathBuf,
+    width: u32,
+    height: u32,
+) -> anyhow::Result<()> {
+    use image::{RgbaImage, Rgba};
+
+    let mut img = RgbaImage::new(width, height);
+
+    // Black background
+    for pixel in img.pixels_mut() {
+        *pixel = Rgba([0, 0, 0, 255]);
+    }
+
+    let alen = plot.get_alen() as f64;
+    let blen = plot.get_blen() as f64;
+
+    // Calculate scale to fit entire genome
+    let scale_x = alen / width as f64;
+    let scale_y = blen / height as f64;
+    let scale = scale_x.max(scale_y);
+
+    // Genome to pixel mapping
+    let genome_to_pixel = |gx: f64, gy: f64| -> (i32, i32) {
+        let px = (gx / scale) as i32;
+        let py = (height as i32) - (gy / scale) as i32 - 1; // Flip Y
+        (px, py)
+    };
+
+    // Draw all segments for layer 0
+    let segments = plot.query_segments_in_region(0, 0.0, 0.0, alen, blen);
+
+    for seg in segments {
+        let (x1, y1) = genome_to_pixel(seg.abeg as f64, seg.bbeg as f64);
+        let (x2, y2) = genome_to_pixel(seg.aend as f64, seg.bend as f64);
+
+        // Color: green for forward, red for reverse
+        let color = if seg.reverse {
+            Rgba([255, 0, 0, 255])  // Red
+        } else {
+            Rgba([0, 255, 0, 255])  // Green
+        };
+
+        // Draw line using Bresenham's algorithm
+        draw_line(&mut img, x1, y1, x2, y2, color);
+    }
+
+    img.save(output_path)?;
+    Ok(())
+}
+
+/// Draw a line using Bresenham's algorithm
+fn draw_line(img: &mut image::RgbaImage, x0: i32, y0: i32, x1: i32, y1: i32, color: image::Rgba<u8>) {
+    let dx = (x1 - x0).abs();
+    let dy = (y1 - y0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut err = dx - dy;
+    let mut x = x0;
+    let mut y = y0;
+
+    let width = img.width() as i32;
+    let height = img.height() as i32;
+
+    loop {
+        // Set pixel if in bounds
+        if x >= 0 && x < width && y >= 0 && y < height {
+            img.put_pixel(x as u32, y as u32, color);
+        }
+
+        if x == x1 && y == y1 {
+            break;
+        }
+
+        let e2 = 2 * err;
+        if e2 > -dy {
+            err -= dy;
+            x += sx;
+        }
+        if e2 < dx {
+            err += dx;
+            y += sy;
+        }
+    }
 }
 
 // ============================================================================
@@ -440,9 +523,9 @@ impl eframe::App for AlnViewApp {
                     ui.label("Rust port: 2025");
                     ui.add_space(10.0);
                     ui.label("Built with:");
-                    ui.label("  • Rust 🦀");
+                    ui.label("  • Pure Rust 🦀");
                     ui.label("  • egui (immediate mode GUI)");
-                    ui.label("  • C backend (temporary FFI)");
+                    ui.label("  • fastga-rs (alignment reader)");
                     ui.add_space(10.0);
                     if ui.button("Close").clicked() {
                         self.show_about = false;

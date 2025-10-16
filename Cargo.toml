@@ -2,8 +2,12 @@
 name = "alnview"
 version = "0.1.0"
 edition = "2021"
-authors = ["Gene Myers"]
-description = "Qt-free Rust+egui alignment viewer for FASTGA"
+authors = ["Erik Garrison"]
+description = "Fast, interactive alignment viewer for pangenome analysis (built on Gene Myers' ALNVIEW design)"
+repository = "https://github.com/pangenome/alnviz"
+license = "MIT"
+keywords = ["genomics", "alignment", "visualization", "pangenome"]
+categories = ["science", "visualization"]
 
 [dependencies]
 eframe = "0.28"

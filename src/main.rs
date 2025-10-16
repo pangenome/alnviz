@@ -325,9 +325,9 @@ struct AlnViewApp {
     plot_receiver: Option<Receiver<Result<RustPlot, String>>>,
 
     // Interaction state
-    box_zoom_start: Option<egui::Pos2>,     // Shift+drag box zoom
+    box_zoom_start: Option<egui::Pos2>, // Shift+drag box zoom
     #[allow(dead_code)]
-    selected_segment: Option<usize>,        // For x/X key selection (future feature)
+    selected_segment: Option<usize>, // For x/X key selection (future feature)
 }
 
 #[derive(Clone)]
@@ -410,9 +410,7 @@ impl eframe::App for AlnViewApp {
                         // Extract real genome lengths
                         let alen = rust_plot.get_alen() as f64;
                         let blen = rust_plot.get_blen() as f64;
-                        println!(
-                            "✅ Plot loaded successfully! Genome lengths: {alen} x {blen}"
-                        );
+                        println!("✅ Plot loaded successfully! Genome lengths: {alen} x {blen}");
 
                         // Update view with actual genome dimensions
                         self.view.max_x = alen;

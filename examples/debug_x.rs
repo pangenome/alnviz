@@ -33,9 +33,14 @@ fn main() -> anyhow::Result<()> {
     println!("\nFirst alignment record:");
     if let Some(rec) = reader.read_record()? {
         println!("  query_id: {}, target_id: {}", rec.query_id, rec.target_id);
-        println!("  query_len: {}, target_len: {}", rec.query_len, rec.target_len);
-        println!("  query: {}..{}, target: {}..{}",
-            rec.query_start, rec.query_end, rec.target_start, rec.target_end);
+        println!(
+            "  query_len: {}, target_len: {}",
+            rec.query_len, rec.target_len
+        );
+        println!(
+            "  query: {}..{}, target: {}..{}",
+            rec.query_start, rec.query_end, rec.target_start, rec.target_end
+        );
     } else {
         println!("  No records found");
     }

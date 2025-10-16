@@ -13,22 +13,58 @@ fn main() -> anyhow::Result<()> {
             reverse_count += 1;
             if reverse_count <= 5 {
                 // For reverse complement, bbeg should be > bend (negative slope)
-                let slope_direction = if seg.bbeg > seg.bend { "NEGATIVE ✓" } else { "POSITIVE ✗" };
+                let slope_direction = if seg.bbeg > seg.bend {
+                    "NEGATIVE ✓"
+                } else {
+                    "POSITIVE ✗"
+                };
                 println!("Segment {}: REVERSE", i);
-                println!("  Query: {} -> {} (len: {})", seg.abeg, seg.aend, seg.aend - seg.abeg);
-                println!("  Target: {} -> {} (len: {})", seg.bbeg, seg.bend, seg.bend - seg.bbeg);
-                println!("  Slope: {} (bbeg > bend? {})", slope_direction, seg.bbeg > seg.bend);
+                println!(
+                    "  Query: {} -> {} (len: {})",
+                    seg.abeg,
+                    seg.aend,
+                    seg.aend - seg.abeg
+                );
+                println!(
+                    "  Target: {} -> {} (len: {})",
+                    seg.bbeg,
+                    seg.bend,
+                    seg.bend - seg.bbeg
+                );
+                println!(
+                    "  Slope: {} (bbeg > bend? {})",
+                    slope_direction,
+                    seg.bbeg > seg.bend
+                );
                 println!();
             }
         } else {
             forward_count += 1;
             if forward_count <= 3 {
                 // For forward, bbeg should be < bend (positive slope)
-                let slope_direction = if seg.bbeg < seg.bend { "POSITIVE ✓" } else { "NEGATIVE ✗" };
+                let slope_direction = if seg.bbeg < seg.bend {
+                    "POSITIVE ✓"
+                } else {
+                    "NEGATIVE ✗"
+                };
                 println!("Segment {}: FORWARD", i);
-                println!("  Query: {} -> {} (len: {})", seg.abeg, seg.aend, seg.aend - seg.abeg);
-                println!("  Target: {} -> {} (len: {})", seg.bbeg, seg.bend, seg.bend - seg.bbeg);
-                println!("  Slope: {} (bbeg < bend? {})", slope_direction, seg.bbeg < seg.bend);
+                println!(
+                    "  Query: {} -> {} (len: {})",
+                    seg.abeg,
+                    seg.aend,
+                    seg.aend - seg.abeg
+                );
+                println!(
+                    "  Target: {} -> {} (len: {})",
+                    seg.bbeg,
+                    seg.bend,
+                    seg.bend - seg.bbeg
+                );
+                println!(
+                    "  Slope: {} (bbeg < bend? {})",
+                    slope_direction,
+                    seg.bbeg < seg.bend
+                );
                 println!();
             }
         }

@@ -2,8 +2,8 @@
 use crate::aln_reader::{AlnFile, AlnRecord};
 use crate::sequence_filter::SequenceFilter;
 use anyhow::Result;
-use std::path::Path;
 use std::collections::HashSet;
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 pub struct AlignmentSegment {
@@ -98,45 +98,55 @@ impl RustPlot {
         target_boundaries.push(cumulative); // Add final boundary
 
         // Now convert records to segments with genome-wide coordinates
-        let segments: Vec<AlignmentSegment> = records.iter().enumerate().map(|(i, rec)| {
-            let qid = rec.query_id as usize;
-            let tid = rec.target_id as usize;
+        let segments: Vec<AlignmentSegment> = records
+            .iter()
+            .enumerate()
+            .map(|(i, rec)| {
+                let qid = rec.query_id as usize;
+                let tid = rec.target_id as usize;
 
-            // Get scaffold offsets
-            let query_offset = if qid < query_boundaries.len() {
-                query_boundaries[qid]
-            } else {
-                0
-            };
-            let target_offset = if tid < target_boundaries.len() {
-                target_boundaries[tid]
-            } else {
-                0
-            };
-
-            // For reverse complement: subtract from END of target sequence (like C code)
-            // C code: bbeg = (offset + seqlen) - rec.target_start
-            let (bbeg, bend) = if rec.reverse != 0 {
-                let target_seq_len = if tid < target_lengths.len() {
-                    target_lengths[tid]
+                // Get scaffold offsets
+                let query_offset = if qid < query_boundaries.len() {
+                    query_boundaries[qid]
                 } else {
                     0
                 };
-                let target_end_pos = target_offset + target_seq_len;
-                (target_end_pos - rec.target_start, target_end_pos - rec.target_end)
-            } else {
-                (target_offset + rec.target_start, target_offset + rec.target_end)
-            };
+                let target_offset = if tid < target_boundaries.len() {
+                    target_boundaries[tid]
+                } else {
+                    0
+                };
 
-            // Convert to genome-wide coordinates
-            AlignmentSegment {
-                abeg: query_offset + rec.query_start,
-                aend: query_offset + rec.query_end,
-                bbeg,
-                bend,
-                reverse: rec.reverse != 0,
-            }
-        }).collect();
+                // For reverse complement: subtract from END of target sequence (like C code)
+                // C code: bbeg = (offset + seqlen) - rec.target_start
+                let (bbeg, bend) = if rec.reverse != 0 {
+                    let target_seq_len = if tid < target_lengths.len() {
+                        target_lengths[tid]
+                    } else {
+                        0
+                    };
+                    let target_end_pos = target_offset + target_seq_len;
+                    (
+                        target_end_pos - rec.target_start,
+                        target_end_pos - rec.target_end,
+                    )
+                } else {
+                    (
+                        target_offset + rec.target_start,
+                        target_offset + rec.target_end,
+                    )
+                };
+
+                // Convert to genome-wide coordinates
+                AlignmentSegment {
+                    abeg: query_offset + rec.query_start,
+                    aend: query_offset + rec.query_end,
+                    bbeg,
+                    bend,
+                    reverse: rec.reverse != 0,
+                }
+            })
+            .collect();
 
         Ok(Self {
             query_sequences,
@@ -190,7 +200,8 @@ impl RustPlot {
         let y_min = y as i64;
         let y_max = (y + height) as i64;
 
-        self.segments.iter()
+        self.segments
+            .iter()
             .filter(|seg| {
                 // Check if segment intersects with visible region
                 let seg_x_min = seg.abeg.min(seg.aend);
@@ -199,8 +210,7 @@ impl RustPlot {
                 let seg_y_max = seg.bbeg.max(seg.bend);
 
                 // Intersection test
-                seg_x_max >= x_min && seg_x_min <= x_max &&
-                seg_y_max >= y_min && seg_y_min <= y_max
+                seg_x_max >= x_min && seg_x_min <= x_max && seg_y_max >= y_min && seg_y_min <= y_max
             })
             .cloned()
             .collect()
@@ -208,14 +218,19 @@ impl RustPlot {
 
     /// Apply sequence filters to create a subset view
     /// Returns a new RustPlot with only segments involving selected sequences
-    pub fn with_filters(&self, query_filter: &SequenceFilter, target_filter: &SequenceFilter) -> Result<Self> {
+    pub fn with_filters(
+        &self,
+        query_filter: &SequenceFilter,
+        target_filter: &SequenceFilter,
+    ) -> Result<Self> {
         // Get matching sequence indices
         let query_indices = query_filter.matching_indices(&self.query_sequences);
         let target_indices = target_filter.matching_indices(&self.target_sequences);
 
         // If both filters are empty, return clone
-        if query_indices.len() == self.query_sequences.len() &&
-           target_indices.len() == self.target_sequences.len() {
+        if query_indices.len() == self.query_sequences.len()
+            && target_indices.len() == self.target_sequences.len()
+        {
             return Ok(self.clone());
         }
 
@@ -272,7 +287,8 @@ impl RustPlot {
         for seg in &self.segments {
             // Find which sequence this segment belongs to
             let query_idx = self.find_sequence_index(&self.query_boundaries, seg.abeg);
-            let target_idx = self.find_sequence_index(&self.target_boundaries, seg.bbeg.min(seg.bend));
+            let target_idx =
+                self.find_sequence_index(&self.target_boundaries, seg.bbeg.min(seg.bend));
 
             // Check if both sequences are in our filter
             if let (Some(new_qidx), Some(new_tidx)) = (
@@ -325,7 +341,9 @@ impl RustPlot {
     /// Returns (sequence_index, sequence_name, local_position)
     pub fn query_coord_to_sequence(&self, coord: i64) -> (usize, String, i64) {
         let idx = self.find_sequence_index(&self.query_boundaries, coord);
-        let name = self.query_sequences.get(idx)
+        let name = self
+            .query_sequences
+            .get(idx)
             .cloned()
             .unwrap_or_else(|| format!("query_{}", idx));
         let local_pos = coord - self.query_boundaries.get(idx).copied().unwrap_or(0);
@@ -336,7 +354,9 @@ impl RustPlot {
     /// Returns (sequence_index, sequence_name, local_position)
     pub fn target_coord_to_sequence(&self, coord: i64) -> (usize, String, i64) {
         let idx = self.find_sequence_index(&self.target_boundaries, coord);
-        let name = self.target_sequences.get(idx)
+        let name = self
+            .target_sequences
+            .get(idx)
             .cloned()
             .unwrap_or_else(|| format!("target_{}", idx));
         let local_pos = coord - self.target_boundaries.get(idx).copied().unwrap_or(0);

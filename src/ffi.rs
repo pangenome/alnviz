@@ -6,8 +6,8 @@
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
 
+use rstar::{Envelope, RTree, RTreeObject, AABB};
 use std::os::raw::{c_char, c_int, c_void};
-use rstar::{RTree, AABB, RTreeObject, Envelope};
 
 // ============================================================================
 // Core Data Structures
@@ -51,7 +51,7 @@ pub struct DotSegment {
 pub struct QuadLeaf {
     pub length: i32,
     pub depth: i32,
-    pub idx: [i32; 8],  // This is actually variable-sized, handle with care!
+    pub idx: [i32; 8], // This is actually variable-sized, handle with care!
 }
 
 // Opaque pointer - don't access struct fields directly from Rust
@@ -80,11 +80,7 @@ extern "C" {
     pub fn copyPlot(plot: *mut DotPlot) -> *mut DotPlot;
 
     /// Query segments in a layer within a frame
-    pub fn Plot_Layer(
-        plot: *mut DotPlot,
-        ilay: c_int,
-        query: *const Frame,
-    ) -> *mut QuadLeaf;
+    pub fn Plot_Layer(plot: *mut DotPlot, ilay: c_int, query: *const Frame) -> *mut QuadLeaf;
 
     /// Free the list returned by Plot_Layer
     pub fn Free_List(list: *mut QuadLeaf);
@@ -98,11 +94,19 @@ extern "C" {
     pub fn DotPlot_GetNlays(plot: *mut DotPlot) -> c_int;
 
     /// Get raw segment array for a layer
-    pub fn DotPlot_GetSegments(plot: *mut DotPlot, layer: c_int, count: *mut i64) -> *const DotSegment;
+    pub fn DotPlot_GetSegments(
+        plot: *mut DotPlot,
+        layer: c_int,
+        count: *mut i64,
+    ) -> *const DotSegment;
 
     /// Get scaffold boundaries (genome: 0=A, 1=B)
     /// Returns array of cumulative positions, caller must free()
-    pub fn DotPlot_GetScaffoldBoundaries(plot: *mut DotPlot, genome: c_int, count: *mut c_int) -> *mut i64;
+    pub fn DotPlot_GetScaffoldBoundaries(
+        plot: *mut DotPlot,
+        genome: c_int,
+        count: *mut c_int,
+    ) -> *mut i64;
 
     /// Create alignment text for a segment
     pub fn create_alignment(
@@ -271,15 +275,19 @@ impl SafePlot {
     }
 
     /// Query segments in a rectangular region using R*-tree spatial index
-    pub fn query_segments_in_region(&self, layer: i32, x: f64, y: f64, width: f64, height: f64) -> Vec<DotSegment> {
+    pub fn query_segments_in_region(
+        &self,
+        layer: i32,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+    ) -> Vec<DotSegment> {
         if layer < 0 || layer as usize >= self.spatial_indices.len() {
             return Vec::new();
         }
 
-        let query_box = AABB::from_corners(
-            [x, y],
-            [x + width, y + height]
-        );
+        let query_box = AABB::from_corners([x, y], [x + width, y + height]);
 
         self.spatial_indices[layer as usize]
             .locate_in_envelope(&query_box)

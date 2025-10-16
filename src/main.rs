@@ -2,14 +2,14 @@ mod aln_reader;
 mod rust_plot;
 mod sequence_filter;
 
+use clap::Parser;
 use eframe::egui;
 use rust_plot::RustPlot;
 use sequence_filter::SequenceFilter;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Receiver};
+use std::sync::{Arc, Mutex};
 use std::thread;
-use clap::Parser;
 
 /// ALNview - Alignment viewer for FASTGA .1aln files
 #[derive(Parser, Debug)]
@@ -53,22 +53,30 @@ fn main() -> Result<(), eframe::Error> {
     if let Some(ref file) = args.file {
         if args.stats || args.plot.is_some() {
             // Parse filters
-            let query_filter = match parse_filters(args.query_filter.as_deref(), args.query_range.as_deref()) {
-                Ok(f) => f,
-                Err(e) => {
-                    eprintln!("Error parsing query filter: {}", e);
-                    std::process::exit(1);
-                }
-            };
-            let target_filter = match parse_filters(args.target_filter.as_deref(), args.target_range.as_deref()) {
-                Ok(f) => f,
-                Err(e) => {
-                    eprintln!("Error parsing target filter: {}", e);
-                    std::process::exit(1);
-                }
-            };
+            let query_filter =
+                match parse_filters(args.query_filter.as_deref(), args.query_range.as_deref()) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        eprintln!("Error parsing query filter: {}", e);
+                        std::process::exit(1);
+                    }
+                };
+            let target_filter =
+                match parse_filters(args.target_filter.as_deref(), args.target_range.as_deref()) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        eprintln!("Error parsing target filter: {}", e);
+                        std::process::exit(1);
+                    }
+                };
 
-            match run_cli_mode(file, args.plot.as_ref(), args.stats, &query_filter, &target_filter) {
+            match run_cli_mode(
+                file,
+                args.plot.as_ref(),
+                args.stats,
+                &query_filter,
+                &target_filter,
+            ) {
                 Ok(_) => return Ok(()),
                 Err(e) => {
                     eprintln!("Error: {}", e);
@@ -94,11 +102,7 @@ fn main() -> Result<(), eframe::Error> {
         app.load_file_async(file);
     }
 
-    eframe::run_native(
-        "ALNview",
-        options,
-        Box::new(move |_cc| Ok(Box::new(app))),
-    )
+    eframe::run_native("ALNview", options, Box::new(move |_cc| Ok(Box::new(app))))
 }
 
 /// Parse filters from CLI arguments
@@ -184,8 +188,11 @@ fn run_cli_mode(
         if !query_filter.is_empty() || !target_filter.is_empty() {
             println!("Applying filters...");
             plot = plot.with_filters(query_filter, target_filter)?;
-            println!("  Filtered to {} query x {} target sequences",
-                plot.query_sequences.len(), plot.target_sequences.len());
+            println!(
+                "  Filtered to {} query x {} target sequences",
+                plot.query_sequences.len(),
+                plot.target_sequences.len()
+            );
             println!("  {} segments remain", plot.segments.len());
         }
 
@@ -203,7 +210,7 @@ fn render_plot_to_png(
     width: u32,
     height: u32,
 ) -> anyhow::Result<()> {
-    use image::{RgbaImage, Rgba};
+    use image::{Rgba, RgbaImage};
 
     let mut img = RgbaImage::new(width, height);
 
@@ -236,9 +243,9 @@ fn render_plot_to_png(
 
         // Color: green for forward, red for reverse
         let color = if seg.reverse {
-            Rgba([255, 0, 0, 255])  // Red
+            Rgba([255, 0, 0, 255]) // Red
         } else {
-            Rgba([0, 255, 0, 255])  // Green
+            Rgba([0, 255, 0, 255]) // Green
         };
 
         // Draw line using Bresenham's algorithm
@@ -250,7 +257,14 @@ fn render_plot_to_png(
 }
 
 /// Draw a line using Bresenham's algorithm
-fn draw_line(img: &mut image::RgbaImage, x0: i32, y0: i32, x1: i32, y1: i32, color: image::Rgba<u8>) {
+fn draw_line(
+    img: &mut image::RgbaImage,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    color: image::Rgba<u8>,
+) {
     let dx = (x1 - x0).abs();
     let dy = (y1 - y0).abs();
     let sx = if x0 < x1 { 1 } else { -1 };
@@ -294,9 +308,9 @@ struct AlnViewApp {
 
     // View state
     view: ViewState,
-    view_history: Vec<ViewState>,  // For 'z' key to go back
-    needs_initial_fit: bool,        // Flag to fit view on first render
-    last_canvas_size: (f32, f32),   // Last canvas dimensions for zoom limits
+    view_history: Vec<ViewState>, // For 'z' key to go back
+    needs_initial_fit: bool,      // Flag to fit view on first render
+    last_canvas_size: (f32, f32), // Last canvas dimensions for zoom limits
 
     // Layer settings
     layers: Vec<LayerSettings>,
@@ -311,8 +325,8 @@ struct AlnViewApp {
     plot_receiver: Option<Receiver<Result<RustPlot, String>>>,
 
     // Interaction state
-    box_zoom_start: Option<egui::Pos2>,  // Shift+drag box zoom
-    selected_segment: Option<usize>,     // For x/X key selection
+    box_zoom_start: Option<egui::Pos2>, // Shift+drag box zoom
+    selected_segment: Option<usize>,    // For x/X key selection
 }
 
 #[derive(Clone)]
@@ -325,9 +339,9 @@ enum LoadingState {
 
 #[derive(Clone)]
 struct ViewState {
-    x: f64,          // Genome x coordinate at left edge
-    y: f64,          // Genome y coordinate at bottom edge
-    scale: f64,      // Base pairs per pixel
+    x: f64,     // Genome x coordinate at left edge
+    y: f64,     // Genome y coordinate at bottom edge
+    scale: f64, // Base pairs per pixel
 
     // Genome lengths (from plot)
     max_x: f64,
@@ -350,7 +364,7 @@ impl Default for AlnViewApp {
             view: ViewState {
                 x: 0.0,
                 y: 0.0,
-                scale: 1000.0,  // 1000 bp per pixel initially
+                scale: 1000.0, // 1000 bp per pixel initially
                 max_x: 1_000_000.0,
                 max_y: 1_000_000.0,
             },
@@ -395,7 +409,10 @@ impl eframe::App for AlnViewApp {
                         // Extract real genome lengths
                         let alen = rust_plot.get_alen() as f64;
                         let blen = rust_plot.get_blen() as f64;
-                        println!("✅ Plot loaded successfully! Genome lengths: {} x {}", alen, blen);
+                        println!(
+                            "✅ Plot loaded successfully! Genome lengths: {} x {}",
+                            alen, blen
+                        );
 
                         // Update view with actual genome dimensions
                         self.view.max_x = alen;
@@ -412,14 +429,17 @@ impl eframe::App for AlnViewApp {
                         self.num_layers = nlays;
 
                         // Create layer settings for all layers
-                        self.layers = (0..nlays).map(|i| LayerSettings {
-                            visible: true,
-                            name: format!("Layer {}", i),
-                            ..Default::default()
-                        }).collect();
+                        self.layers = (0..nlays)
+                            .map(|i| LayerSettings {
+                                visible: true,
+                                name: format!("Layer {}", i),
+                                ..Default::default()
+                            })
+                            .collect();
 
                         self.plot = Some(rust_plot);
-                        *self.loading.lock().unwrap() = LoadingState::Success("Loaded successfully".to_string());
+                        *self.loading.lock().unwrap() =
+                            LoadingState::Success("Loaded successfully".to_string());
                     }
                     Err(e) => {
                         *self.loading.lock().unwrap() = LoadingState::Failed(e);
@@ -537,9 +557,7 @@ impl eframe::App for AlnViewApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(format!(
                         "Pos: X={:.0} Y={:.0}  Scale: {:.1} bp/px",
-                        self.view.x,
-                        self.view.y,
-                        self.view.scale
+                        self.view.x, self.view.y, self.view.scale
                     ));
                 });
             });
@@ -555,7 +573,8 @@ impl eframe::App for AlnViewApp {
                         ui.heading("🦀 ALNview - Rust Edition");
                         ui.add_space(20.0);
 
-                        let is_loading = matches!(&*self.loading.lock().unwrap(), LoadingState::Loading(_));
+                        let is_loading =
+                            matches!(&*self.loading.lock().unwrap(), LoadingState::Loading(_));
 
                         if is_loading {
                             if let LoadingState::Loading(path) = &*self.loading.lock().unwrap() {
@@ -638,10 +657,8 @@ impl AlnViewApp {
     }
 
     fn render_canvas(&mut self, ui: &mut egui::Ui) {
-        let (response, painter) = ui.allocate_painter(
-            ui.available_size(),
-            egui::Sense::click_and_drag(),
-        );
+        let (response, painter) =
+            ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
 
         let rect = response.rect;
 
@@ -687,7 +704,11 @@ impl AlnViewApp {
                 if x >= self.view.x && x <= self.view.x + view_width {
                     let x_pos = genome_to_screen(x, 0.0).x;
                     // TODO: egui doesn't support dashed lines yet, using solid gray
-                    painter.vline(x_pos, rect.y_range(), (1.0, egui::Color32::from_rgb(100, 100, 100)));
+                    painter.vline(
+                        x_pos,
+                        rect.y_range(),
+                        (1.0, egui::Color32::from_rgb(100, 100, 100)),
+                    );
                 }
             }
 
@@ -697,7 +718,11 @@ impl AlnViewApp {
                 let y = pos as f64;
                 if y >= self.view.y && y <= self.view.y + view_height {
                     let y_pos = genome_to_screen(0.0, y).y;
-                    painter.hline(rect.x_range(), y_pos, (1.0, egui::Color32::from_rgb(100, 100, 100)));
+                    painter.hline(
+                        rect.x_range(),
+                        y_pos,
+                        (1.0, egui::Color32::from_rgb(100, 100, 100)),
+                    );
                 }
             }
 
@@ -755,15 +780,12 @@ impl AlnViewApp {
 
                     // Use green for forward, red for reverse (like C version)
                     let color = if is_forward {
-                        egui::Color32::from_rgb(0, 255, 0)  // Green for forward
+                        egui::Color32::from_rgb(0, 255, 0) // Green for forward
                     } else {
-                        egui::Color32::from_rgb(255, 0, 0)  // Red for reverse complement
+                        egui::Color32::from_rgb(255, 0, 0) // Red for reverse complement
                     };
 
-                    painter.line_segment(
-                        [p1, p2],
-                        egui::Stroke::new(1.0, color),
-                    );
+                    painter.line_segment([p1, p2], egui::Stroke::new(1.0, color));
                 }
             }
         }
@@ -785,8 +807,10 @@ impl AlnViewApp {
                 let genome_y = self.view.y + pixel_y * self.view.scale;
 
                 // Get sequence info
-                let (query_idx, query_name, query_local) = plot.query_coord_to_sequence(genome_x as i64);
-                let (target_idx, target_name, target_local) = plot.target_coord_to_sequence(genome_y as i64);
+                let (query_idx, query_name, query_local) =
+                    plot.query_coord_to_sequence(genome_x as i64);
+                let (target_idx, target_name, target_local) =
+                    plot.target_coord_to_sequence(genome_y as i64);
 
                 // Truncate long names for tooltip
                 let query_short = truncate_name(&query_name, 50);
@@ -858,7 +882,11 @@ impl AlnViewApp {
                     if let Some(current) = response.hover_pos() {
                         let painter = response.ctx.debug_painter();
                         let box_rect = egui::Rect::from_two_pos(start, current);
-                        painter.rect_stroke(box_rect, 0.0, egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 100, 100)));
+                        painter.rect_stroke(
+                            box_rect,
+                            0.0,
+                            egui::Stroke::new(2.0, egui::Color32::from_rgb(255, 100, 100)),
+                        );
                     }
                 }
 
@@ -883,8 +911,12 @@ impl AlnViewApp {
 
             // Clamp to genome bounds (0,0) to (max_x, max_y)
             // When zoomed out, this prevents panning beyond genome edges
-            self.view.x = (self.view.x + dx).max(0.0).min((self.view.max_x - view_width).max(0.0));
-            self.view.y = (self.view.y + dy).max(0.0).min((self.view.max_y - view_height).max(0.0));
+            self.view.x = (self.view.x + dx)
+                .max(0.0)
+                .min((self.view.max_x - view_width).max(0.0));
+            self.view.y = (self.view.y + dy)
+                .max(0.0)
+                .min((self.view.max_y - view_height).max(0.0));
         }
 
         // Scroll wheel zoom
@@ -901,7 +933,12 @@ impl AlnViewApp {
         }
     }
 
-    fn zoom_to_box(&mut self, canvas_rect: egui::Rect, screen_start: egui::Pos2, screen_end: egui::Pos2) {
+    fn zoom_to_box(
+        &mut self,
+        canvas_rect: egui::Rect,
+        screen_start: egui::Pos2,
+        screen_end: egui::Pos2,
+    ) {
         // Convert screen coordinates to genome coordinates
         let screen_to_genome = |pos: egui::Pos2| -> (f64, f64) {
             let pixel_x = (pos.x - canvas_rect.min.x) as f64;
@@ -963,7 +1000,7 @@ impl AlnViewApp {
             path.file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("file")
-                .to_string()
+                .to_string(),
         );
 
         println!("🔍 Starting async load: {}", path.display());
@@ -1049,8 +1086,16 @@ impl AlnViewApp {
         let view_height = canvas_rect.height() as f64 * self.view.scale;
 
         // Clamp to genome bounds (handle both zoomed in and zoomed out)
-        self.view.x = self.view.x.max(0.0).min((self.view.max_x - view_width).max(0.0));
-        self.view.y = self.view.y.max(0.0).min((self.view.max_y - view_height).max(0.0));
+        self.view.x = self
+            .view
+            .x
+            .max(0.0)
+            .min((self.view.max_x - view_width).max(0.0));
+        self.view.y = self
+            .view
+            .y
+            .max(0.0)
+            .min((self.view.max_y - view_height).max(0.0));
     }
 
     fn reset_view(&mut self) {

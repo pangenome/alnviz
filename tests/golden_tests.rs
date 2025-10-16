@@ -1,7 +1,7 @@
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use sha2::{Sha256, Digest};
 
 /// Test that rendering produces consistent output
 #[test]
@@ -17,7 +17,14 @@ fn test_render_test_1aln_matches_golden() {
 
     // Run alnview to render the plot
     let status = Command::new("cargo")
-        .args(&["run", "--release", "--", "test.1aln", "--plot", output_path.to_str().unwrap()])
+        .args(&[
+            "run",
+            "--release",
+            "--",
+            "test.1aln",
+            "--plot",
+            output_path.to_str().unwrap(),
+        ])
         .status()
         .expect("Failed to run alnview");
 

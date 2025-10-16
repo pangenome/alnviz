@@ -25,10 +25,7 @@ impl SequenceFilter {
             .filter(|s| !s.is_empty())
             .collect();
 
-        Self {
-            names,
-            range: None,
-        }
+        Self { names, range: None }
     }
 
     /// Create from range string like "0-5" or "3-10"

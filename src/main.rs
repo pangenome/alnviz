@@ -267,12 +267,8 @@ fn render_plot_to_png(
         // We'll draw text rotated by drawing it vertically in the bottom margin
         if idx < plot.query_sequences.len() {
             let name = &plot.query_sequences[idx];
-            // Truncate long names for display
-            let display_name = if name.len() > 15 {
-                format!("{}...", &name[..12])
-            } else {
-                name.to_string()
-            };
+            // Extract meaningful part of name for display
+            let display_name = extract_display_name(name, 20);
 
             // Position: draw vertically starting at the boundary line
             let label_x = px + 5;
@@ -317,12 +313,8 @@ fn render_plot_to_png(
         // This keeps it visible as you scan across the plot
         if idx < plot.target_sequences.len() {
             let name = &plot.target_sequences[idx];
-            // Truncate long names for display
-            let display_name = if name.len() > 15 {
-                format!("{}...", &name[..12])
-            } else {
-                name.to_string()
-            };
+            // Extract meaningful part of name for display
+            let display_name = extract_display_name(name, 25);
 
             // Position at left edge, just below the boundary line
             let label_x = (margin_left + 5) as i32;
@@ -662,12 +654,12 @@ impl eframe::App for AlnViewApp {
                 // Display cursor information
                 if !self.cursor_query_name.is_empty() {
                     ui.label(egui::RichText::new("Query:").strong());
-                    ui.label(format!("  {}", truncate_name(&self.cursor_query_name, 30)));
+                    ui.label(format!("  {}", extract_display_name(&self.cursor_query_name, 35)));
                     ui.label(format!("  Position: {} bp (local)", self.cursor_query_pos));
                     ui.label(format!("  Genome: {:.0} bp", self.cursor_genome_x));
                     ui.add_space(5.0);
                     ui.label(egui::RichText::new("Target:").strong());
-                    ui.label(format!("  {}", truncate_name(&self.cursor_target_name, 30)));
+                    ui.label(format!("  {}", extract_display_name(&self.cursor_target_name, 35)));
                     ui.label(format!("  Position: {} bp (local)", self.cursor_target_pos));
                     ui.label(format!("  Genome: {:.0} bp", self.cursor_genome_y));
                 } else {
@@ -1235,6 +1227,41 @@ impl AlnViewApp {
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/// Extract meaningful part of sequence name for display
+fn extract_display_name(name: &str, max_len: usize) -> String {
+    // Try to extract meaningful part from sequence names like:
+    // "gi|568815529:2834231-2837570 Homo sapiens ... HSCHR6_MHC_COX_CTG1"
+
+    // If it starts with "gi|", try to extract the descriptive part
+    if name.starts_with("gi|") {
+        // Split on space to get the description after the gi|...:... part
+        if let Some(space_pos) = name.find(' ') {
+            let description = &name[space_pos + 1..];
+
+            // Look for specific identifiers like HSCHR6, chr, HLA-, etc.
+            // Try to find the last meaningful word/identifier
+            let words: Vec<&str> = description.split_whitespace().collect();
+
+            // Prefer identifiers that look like scaffold/chromosome names
+            for word in words.iter().rev() {
+                if word.contains("HSCHR") || word.contains("chr") ||
+                   word.starts_with("HLA-") || word.contains("CTG") ||
+                   (word.len() > 3 && word.chars().any(|c| c.is_uppercase())) {
+                    return truncate_name(word, max_len);
+                }
+            }
+
+            // Otherwise use first few words of description
+            let short_desc: Vec<&str> = words.iter().take(3).copied().collect();
+            let joined = short_desc.join(" ");
+            return truncate_name(&joined, max_len);
+        }
+    }
+
+    // Default: just truncate the name as-is
+    truncate_name(name, max_len)
+}
 
 /// Truncate long sequence names for display
 fn truncate_name(name: &str, max_len: usize) -> String {

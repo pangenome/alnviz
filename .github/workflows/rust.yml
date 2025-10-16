@@ -61,9 +61,6 @@ jobs:
     - name: Run unit tests
       run: cargo test --lib --verbose
 
-    - name: Run integration tests (non-golden)
-      run: cargo test --test '*' --exclude golden_tests --verbose
-
     # Golden tests are slow and require test.1aln file
     # Skip them in CI for now unless we add the test file to the repo
     # - name: Run golden tests

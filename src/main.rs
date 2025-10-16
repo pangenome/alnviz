@@ -773,6 +773,40 @@ impl AlnViewApp {
 
         // Draw scale/axes
         self.draw_axes(ui, &painter, rect);
+
+        // Draw hover tooltip with sequence info
+        if let Some(ref plot) = self.plot {
+            if let Some(hover_pos) = response.hover_pos() {
+                // Convert screen position to genome coordinates
+                let pixel_x = (hover_pos.x - rect.min.x) as f64;
+                let pixel_y = (rect.max.y - hover_pos.y) as f64;
+
+                let genome_x = self.view.x + pixel_x * self.view.scale;
+                let genome_y = self.view.y + pixel_y * self.view.scale;
+
+                // Get sequence info
+                let (query_idx, query_name, query_local) = plot.query_coord_to_sequence(genome_x as i64);
+                let (target_idx, target_name, target_local) = plot.target_coord_to_sequence(genome_y as i64);
+
+                // Truncate long names for tooltip
+                let query_short = truncate_name(&query_name, 50);
+                let target_short = truncate_name(&target_name, 50);
+
+                // Show tooltip
+                response.on_hover_ui(|ui| {
+                    ui.set_max_width(400.0);
+                    ui.label(egui::RichText::new("Query:").strong());
+                    ui.label(format!("  {}", query_short));
+                    ui.label(format!("  Position: {} bp (local)", query_local));
+                    ui.label(format!("  Genome: {:.0} bp", genome_x));
+                    ui.separator();
+                    ui.label(egui::RichText::new("Target:").strong());
+                    ui.label(format!("  {}", target_short));
+                    ui.label(format!("  Position: {} bp (local)", target_local));
+                    ui.label(format!("  Genome: {:.0} bp", genome_y));
+                });
+            }
+        }
     }
 
     fn draw_axes(&self, _ui: &mut egui::Ui, painter: &egui::Painter, rect: egui::Rect) {
@@ -1021,5 +1055,18 @@ impl AlnViewApp {
 
     fn reset_view(&mut self) {
         self.needs_initial_fit = true;
+    }
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Truncate long sequence names for display
+fn truncate_name(name: &str, max_len: usize) -> String {
+    if name.len() <= max_len {
+        name.to_string()
+    } else {
+        format!("{}...", &name[..max_len.saturating_sub(3)])
     }
 }

@@ -320,6 +320,28 @@ impl RustPlot {
         }
         boundaries.len().saturating_sub(2).max(0)
     }
+
+    /// Get sequence info for a query genome coordinate
+    /// Returns (sequence_index, sequence_name, local_position)
+    pub fn query_coord_to_sequence(&self, coord: i64) -> (usize, String, i64) {
+        let idx = self.find_sequence_index(&self.query_boundaries, coord);
+        let name = self.query_sequences.get(idx)
+            .cloned()
+            .unwrap_or_else(|| format!("query_{}", idx));
+        let local_pos = coord - self.query_boundaries.get(idx).copied().unwrap_or(0);
+        (idx, name, local_pos)
+    }
+
+    /// Get sequence info for a target genome coordinate
+    /// Returns (sequence_index, sequence_name, local_position)
+    pub fn target_coord_to_sequence(&self, coord: i64) -> (usize, String, i64) {
+        let idx = self.find_sequence_index(&self.target_boundaries, coord);
+        let name = self.target_sequences.get(idx)
+            .cloned()
+            .unwrap_or_else(|| format!("target_{}", idx));
+        let local_pos = coord - self.target_boundaries.get(idx).copied().unwrap_or(0);
+        (idx, name, local_pos)
+    }
 }
 
 impl Clone for RustPlot {

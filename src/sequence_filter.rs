@@ -32,7 +32,7 @@ impl SequenceFilter {
     pub fn from_range(range_str: &str) -> anyhow::Result<Self> {
         let parts: Vec<&str> = range_str.split('-').collect();
         if parts.len() != 2 {
-            anyhow::bail!("Range must be in format 'start-end', got: {}", range_str);
+            anyhow::bail!("Range must be in format 'start-end', got: {range_str}");
         }
 
         let start: usize = parts[0].trim().parse()?;

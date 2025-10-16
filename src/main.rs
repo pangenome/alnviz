@@ -57,7 +57,7 @@ fn main() -> Result<(), eframe::Error> {
                 match parse_filters(args.query_filter.as_deref(), args.query_range.as_deref()) {
                     Ok(f) => f,
                     Err(e) => {
-                        eprintln!("Error parsing query filter: {}", e);
+                        eprintln!("Error parsing query filter: {e}");
                         std::process::exit(1);
                     }
                 };
@@ -65,7 +65,7 @@ fn main() -> Result<(), eframe::Error> {
                 match parse_filters(args.target_filter.as_deref(), args.target_range.as_deref()) {
                     Ok(f) => f,
                     Err(e) => {
-                        eprintln!("Error parsing target filter: {}", e);
+                        eprintln!("Error parsing target filter: {e}");
                         std::process::exit(1);
                     }
                 };
@@ -79,7 +79,7 @@ fn main() -> Result<(), eframe::Error> {
             ) {
                 Ok(_) => return Ok(()),
                 Err(e) => {
-                    eprintln!("Error: {}", e);
+                    eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
@@ -173,10 +173,10 @@ fn run_cli_mode(
             };
 
             println!("\nAlignment Statistics:");
-            println!("  Average identity: {:.2}%", avg_identity);
-            println!("  Forward alignments: {}", forward_count);
-            println!("  Reverse alignments: {}", reverse_count);
-            println!("  Total aligned bases: {}", total_length);
+            println!("  Average identity: {avg_identity:.2}%");
+            println!("  Forward alignments: {forward_count}");
+            println!("  Reverse alignments: {reverse_count}");
+            println!("  Total aligned bases: {total_length}");
         }
     }
 
@@ -325,8 +325,9 @@ struct AlnViewApp {
     plot_receiver: Option<Receiver<Result<RustPlot, String>>>,
 
     // Interaction state
-    box_zoom_start: Option<egui::Pos2>, // Shift+drag box zoom
-    selected_segment: Option<usize>,    // For x/X key selection
+    box_zoom_start: Option<egui::Pos2>,     // Shift+drag box zoom
+    #[allow(dead_code)]
+    selected_segment: Option<usize>,        // For x/X key selection (future feature)
 }
 
 #[derive(Clone)]
@@ -410,8 +411,7 @@ impl eframe::App for AlnViewApp {
                         let alen = rust_plot.get_alen() as f64;
                         let blen = rust_plot.get_blen() as f64;
                         println!(
-                            "✅ Plot loaded successfully! Genome lengths: {} x {}",
-                            alen, blen
+                            "✅ Plot loaded successfully! Genome lengths: {alen} x {blen}"
                         );
 
                         // Update view with actual genome dimensions
@@ -424,7 +424,7 @@ impl eframe::App for AlnViewApp {
 
                         // Get actual number of layers from plot
                         let nlays = rust_plot.get_nlays() as usize;
-                        println!("  Plot has {} layers", nlays);
+                        println!("  Plot has {nlays} layers");
 
                         self.num_layers = nlays;
 
@@ -432,7 +432,7 @@ impl eframe::App for AlnViewApp {
                         self.layers = (0..nlays)
                             .map(|i| LayerSettings {
                                 visible: true,
-                                name: format!("Layer {}", i),
+                                name: format!("Layer {i}"),
                                 ..Default::default()
                             })
                             .collect();
@@ -453,11 +453,11 @@ impl eframe::App for AlnViewApp {
         let loading_state = self.loading.lock().unwrap().clone();
         match loading_state {
             LoadingState::Success(msg) => {
-                println!("✅ {}", msg);
+                println!("✅ {msg}");
                 *self.loading.lock().unwrap() = LoadingState::Idle;
             }
             LoadingState::Failed(msg) => {
-                eprintln!("❌ {}", msg);
+                eprintln!("❌ {msg}");
                 *self.loading.lock().unwrap() = LoadingState::Idle;
             }
             _ => {}
@@ -543,7 +543,7 @@ impl eframe::App for AlnViewApp {
                 match &*self.loading.lock().unwrap() {
                     LoadingState::Loading(path) => {
                         ui.spinner();
-                        ui.label(format!("Loading: {}", path));
+                        ui.label(format!("Loading: {path}"));
                     }
                     _ => {
                         if let Some(ref path) = self.current_file {
@@ -579,7 +579,7 @@ impl eframe::App for AlnViewApp {
                         if is_loading {
                             if let LoadingState::Loading(path) = &*self.loading.lock().unwrap() {
                                 ui.spinner();
-                                ui.label(format!("Loading: {}...", path));
+                                ui.label(format!("Loading: {path}..."));
                                 ui.label("This may take a while for large files");
                             }
                         } else {
@@ -807,9 +807,9 @@ impl AlnViewApp {
                 let genome_y = self.view.y + pixel_y * self.view.scale;
 
                 // Get sequence info
-                let (query_idx, query_name, query_local) =
+                let (_query_idx, query_name, query_local) =
                     plot.query_coord_to_sequence(genome_x as i64);
-                let (target_idx, target_name, target_local) =
+                let (_target_idx, target_name, target_local) =
                     plot.target_coord_to_sequence(genome_y as i64);
 
                 // Truncate long names for tooltip
@@ -820,14 +820,14 @@ impl AlnViewApp {
                 response.on_hover_ui(|ui| {
                     ui.set_max_width(400.0);
                     ui.label(egui::RichText::new("Query:").strong());
-                    ui.label(format!("  {}", query_short));
-                    ui.label(format!("  Position: {} bp (local)", query_local));
-                    ui.label(format!("  Genome: {:.0} bp", genome_x));
+                    ui.label(format!("  {query_short}"));
+                    ui.label(format!("  Position: {query_local} bp (local)"));
+                    ui.label(format!("  Genome: {genome_x:.0} bp"));
                     ui.separator();
                     ui.label(egui::RichText::new("Target:").strong());
-                    ui.label(format!("  {}", target_short));
-                    ui.label(format!("  Position: {} bp (local)", target_local));
-                    ui.label(format!("  Genome: {:.0} bp", genome_y));
+                    ui.label(format!("  {target_short}"));
+                    ui.label(format!("  Position: {target_local} bp (local)"));
+                    ui.label(format!("  Genome: {genome_y:.0} bp"));
                 });
             }
         }
@@ -1021,7 +1021,7 @@ impl AlnViewApp {
                 }
                 Err(e) => {
                     let error_msg = format!("Failed to load {}: {}", path.display(), e);
-                    eprintln!("❌ {}", error_msg);
+                    eprintln!("❌ {error_msg}");
                     let _ = tx.send(Err(error_msg));
                 }
             }

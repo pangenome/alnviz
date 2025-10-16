@@ -7,9 +7,13 @@ use std::path::Path;
 pub struct AlnRecord {
     pub query_id: i64,
     pub target_id: i64,
+    #[allow(dead_code)]
     pub query_name: String,
+    #[allow(dead_code)]
     pub target_name: String,
+    #[allow(dead_code)]
     pub query_len: i64,
+    #[allow(dead_code)]
     pub target_len: i64,
     pub query_start: i64,
     pub query_end: i64,
@@ -49,14 +53,9 @@ impl AlnFile {
         let mut names = Vec::new();
         let mut seq_id = 0;
 
-        loop {
-            match reader.get_seq_name(seq_id, genome) {
-                Ok(name) => {
-                    names.push(name);
-                    seq_id += 1;
-                }
-                Err(_) => break,
-            }
+        while let Ok(name) = reader.get_seq_name(seq_id, genome) {
+            names.push(name);
+            seq_id += 1;
         }
 
         Ok(names)
@@ -69,7 +68,7 @@ impl AlnFile {
         } else {
             // Generate placeholder name if not in cache
             let prefix = if genome == 0 { "query" } else { "target" };
-            format!("{}_{}", prefix, seq_id)
+            format!("{prefix}_{seq_id}")
         }
     }
 
@@ -101,11 +100,13 @@ impl AlnFile {
     }
 
     /// Get total query genome length (sum of all query sequences)
+    #[allow(dead_code)]
     pub fn get_query_genome_len(&self) -> u64 {
         self.query_sequences.len() as u64
     }
 
     /// Get total target genome length (sum of all target sequences)
+    #[allow(dead_code)]
     pub fn get_target_genome_len(&self) -> u64 {
         self.target_sequences.len() as u64
     }

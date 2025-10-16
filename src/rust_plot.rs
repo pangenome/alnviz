@@ -1,8 +1,7 @@
 // Pure Rust implementation of plot data structures
-use crate::aln_reader::{AlnFile, AlnRecord};
+use crate::aln_reader::AlnFile;
 use crate::sequence_filter::SequenceFilter;
 use anyhow::Result;
-use std::collections::HashSet;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -69,11 +68,11 @@ impl RustPlot {
         // Generate placeholder names if needed
         while query_sequences.len() < query_lengths.len() {
             let id = query_sequences.len();
-            query_sequences.push(format!("query_{}", id));
+            query_sequences.push(format!("query_{id}"));
         }
         while target_sequences.len() < target_lengths.len() {
             let id = target_sequences.len();
-            target_sequences.push(format!("target_{}", id));
+            target_sequences.push(format!("target_{id}"));
         }
 
         // Calculate total genome lengths
@@ -100,8 +99,7 @@ impl RustPlot {
         // Now convert records to segments with genome-wide coordinates
         let segments: Vec<AlignmentSegment> = records
             .iter()
-            .enumerate()
-            .map(|(i, rec)| {
+            .map(|rec| {
                 let qid = rec.query_id as usize;
                 let tid = rec.target_id as usize;
 
@@ -345,7 +343,7 @@ impl RustPlot {
             .query_sequences
             .get(idx)
             .cloned()
-            .unwrap_or_else(|| format!("query_{}", idx));
+            .unwrap_or_else(|| format!("query_{idx}"));
         let local_pos = coord - self.query_boundaries.get(idx).copied().unwrap_or(0);
         (idx, name, local_pos)
     }
@@ -358,7 +356,7 @@ impl RustPlot {
             .target_sequences
             .get(idx)
             .cloned()
-            .unwrap_or_else(|| format!("target_{}", idx));
+            .unwrap_or_else(|| format!("target_{idx}"));
         let local_pos = coord - self.target_boundaries.get(idx).copied().unwrap_or(0);
         (idx, name, local_pos)
     }

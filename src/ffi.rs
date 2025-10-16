@@ -6,8 +6,8 @@
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
 
-use rstar::{Envelope, RTree, RTreeObject, AABB};
-use std::os::raw::{c_char, c_int, c_void};
+use rstar::{RTree, RTreeObject, AABB};
+use std::os::raw::{c_char, c_int};
 
 // ============================================================================
 // Core Data Structures
@@ -199,7 +199,10 @@ pub struct SafePlot {
 }
 
 impl SafePlot {
-    pub fn new(ptr: *mut DotPlot) -> Option<Self> {
+    /// Create a new SafePlot from a raw pointer
+    /// # Safety
+    /// The caller must ensure ptr is valid or null
+    pub unsafe fn new(ptr: *mut DotPlot) -> Option<Self> {
         if ptr.is_null() {
             return None;
         }
@@ -208,7 +211,7 @@ impl SafePlot {
         let nlays = unsafe { DotPlot_GetNlays(ptr) };
         let mut spatial_indices = Vec::with_capacity(nlays as usize);
 
-        println!("🌳 Building R*-trees for {} layers...", nlays);
+        println!("🌳 Building R*-trees for {nlays} layers...");
 
         for layer in 0..nlays {
             // Get all segments for this layer

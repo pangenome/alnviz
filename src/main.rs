@@ -96,7 +96,7 @@ fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])
-            .with_title("ALNview - Rust Edition"),
+            .with_title("alnviz"),
         ..Default::default()
     };
 
@@ -108,7 +108,7 @@ fn main() -> Result<(), eframe::Error> {
         app.load_file_async(file);
     }
 
-    eframe::run_native("ALNview", options, Box::new(move |_cc| Ok(Box::new(app))))
+    eframe::run_native("alnviz", options, Box::new(move |_cc| Ok(Box::new(app))))
 }
 
 /// Parse filters from CLI arguments
@@ -143,14 +143,22 @@ fn run_cli_mode(
     use aln_reader::AlnFile;
     use crate::paf_reader::read_paf_file;
 
-    if from_paf {
+    // Auto-detect if not forced
+    let auto_paf = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("paf"))
+        .unwrap_or(false);
+    let use_paf = from_paf || auto_paf;
+
+    if use_paf {
         println!("Reading PAF file: {}", file.display());
     } else {
         println!("Reading .1aln file: {}", file.display());
     }
 
     // Gather basic info
-    let (query_count, target_count) = if from_paf {
+    let (query_count, target_count) = if use_paf {
         let recs = read_paf_file(file)?;
         use std::collections::HashSet;
         let q: HashSet<&str> = recs.iter().map(|r| r.query_name.as_str()).collect();
@@ -166,7 +174,7 @@ fn run_cli_mode(
 
     if print_stats {
         println!("\nReading alignment records...");
-        if from_paf {
+        if use_paf {
             let records = read_paf_file(file)?;
             println!("Total alignments: {}", records.len());
             if !records.is_empty() {
@@ -216,7 +224,7 @@ fn run_cli_mode(
 
     if let Some(output_path) = output_plot {
         println!("\nRendering plot to: {}", output_path.display());
-        let mut plot = if from_paf {
+        let mut plot = if use_paf {
             RustPlot::from_paf(file)?
         } else {
             RustPlot::from_file(file)?
@@ -739,7 +747,7 @@ impl eframe::App for AlnViewApp {
             } else {
                 ui.centered_and_justified(|ui| {
                     ui.vertical_centered(|ui| {
-                        ui.heading("🦀 ALNview - Rust Edition");
+                        ui.heading("🦀 alnviz");
                         ui.add_space(20.0);
 
                         let is_loading =
@@ -765,11 +773,11 @@ impl eframe::App for AlnViewApp {
 
         // About dialog
         if self.show_about {
-            egui::Window::new("About ALNview")
+            egui::Window::new("About alnviz")
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
-                    ui.heading("ALNview - Rust Edition");
+                    ui.heading("alnviz");
                     ui.separator();
                     ui.label("A Qt-free alignment viewer for FASTGA");
                     ui.add_space(10.0);
@@ -1144,7 +1152,8 @@ impl AlnViewApp {
 impl AlnViewApp {
     fn open_file_dialog(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Alignment Files", &["1aln"])
+            .add_filter("Alignment Files", &["1aln", "paf"])
+            .add_filter("All Files", &["*"])
             .pick_file()
         {
             self.load_file_async(path);
@@ -1169,11 +1178,49 @@ impl AlnViewApp {
         self.plot_receiver = Some(rx);
         self.current_file = Some(path.clone());
 
-        // Spawn background thread for loading using Rust reader
+        // Spawn background thread for loading using Rust reader (auto-detect format)
         thread::spawn(move || {
             println!("🧵 Background thread: Loading file with Rust reader...");
 
-            match RustPlot::from_file(&path) {
+            // Detect by extension or content
+            let mut is_paf = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("paf"))
+                .unwrap_or(false);
+
+            if !is_paf {
+                // Try content sniffing: PAF has >=12 tab-separated fields, 5th col '+' or '-'
+                use std::io::{BufRead, BufReader};
+                if let Ok(file) = std::fs::File::open(&path) {
+                    let reader = BufReader::new(file);
+                    for line_res in reader.lines().take(10) {
+                        if let Ok(line) = line_res {
+                            let line = line.trim();
+                            if line.is_empty() || line.starts_with('#') {
+                                continue;
+                            }
+                            let cols: Vec<&str> = line.split('\t').collect();
+                            if cols.len() >= 12 {
+                                if let Some(strand) = cols.get(4).and_then(|s| s.chars().next()) {
+                                    if strand == '+' || strand == '-' {
+                                        is_paf = true;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            let plot_res = if is_paf {
+                RustPlot::from_paf(&path)
+            } else {
+                RustPlot::from_file(&path)
+            };
+
+            match plot_res {
                 Ok(plot) => {
                     println!("✅ Rust plot loaded successfully!");
                     let _ = tx.send(Ok(plot));

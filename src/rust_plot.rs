@@ -1,5 +1,6 @@
 // Pure Rust implementation of plot data structures
 use crate::aln_reader::AlnFile;
+use crate::paf_reader::read_paf_file;
 use crate::sequence_filter::SequenceFilter;
 use anyhow::Result;
 use std::path::Path;
@@ -145,6 +146,116 @@ impl RustPlot {
                 }
             })
             .collect();
+
+        Ok(Self {
+            query_sequences,
+            target_sequences,
+            query_lengths,
+            target_lengths,
+            query_genome_len,
+            target_genome_len,
+            segments,
+            query_boundaries,
+            target_boundaries,
+        })
+    }
+
+    /// Load a PAF file and create plot data
+    pub fn from_paf<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let records = read_paf_file(&path)?;
+
+        // Collect unique sequence names and lengths (take max length seen per name)
+        use std::collections::HashMap;
+        let mut qname_to_len: HashMap<String, i64> = HashMap::new();
+        let mut tname_to_len: HashMap<String, i64> = HashMap::new();
+
+        for rec in &records {
+            qname_to_len
+                .entry(rec.query_name.clone())
+                .and_modify(|l| *l = (*l).max(rec.query_len))
+                .or_insert(rec.query_len);
+            tname_to_len
+                .entry(rec.target_name.clone())
+                .and_modify(|l| *l = (*l).max(rec.target_len))
+                .or_insert(rec.target_len);
+        }
+
+        // Stable order by insertion from HashMap is undefined; sort by name for stability.
+        let mut query_sequences: Vec<String> = qname_to_len.keys().cloned().collect();
+        let mut target_sequences: Vec<String> = tname_to_len.keys().cloned().collect();
+        query_sequences.sort();
+        target_sequences.sort();
+
+        // Build lengths aligned with sequences
+        let query_lengths: Vec<i64> = query_sequences
+            .iter()
+            .map(|n| *qname_to_len.get(n).unwrap_or(&0))
+            .collect();
+        let target_lengths: Vec<i64> = target_sequences
+            .iter()
+            .map(|n| *tname_to_len.get(n).unwrap_or(&0))
+            .collect();
+
+        // Build name -> index maps
+        let qindex: HashMap<&str, usize> = query_sequences
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.as_str(), i))
+            .collect();
+        let tindex: HashMap<&str, usize> = target_sequences
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.as_str(), i))
+            .collect();
+
+        // Calculate total genome lengths and boundaries
+        let query_genome_len: i64 = query_lengths.iter().sum();
+        let target_genome_len: i64 = target_lengths.iter().sum();
+
+        let mut query_boundaries = Vec::new();
+        let mut cumulative = 0i64;
+        for &len in &query_lengths {
+            query_boundaries.push(cumulative);
+            cumulative += len;
+        }
+        query_boundaries.push(cumulative);
+
+        let mut target_boundaries = Vec::new();
+        cumulative = 0;
+        for &len in &target_lengths {
+            target_boundaries.push(cumulative);
+            cumulative += len;
+        }
+        target_boundaries.push(cumulative);
+
+        // Convert records to segments
+        let mut segments = Vec::new();
+        for rec in &records {
+            let qid = *qindex.get(rec.query_name.as_str()).unwrap();
+            let tid = *tindex.get(rec.target_name.as_str()).unwrap();
+
+            let query_offset = query_boundaries[qid];
+            let target_offset = target_boundaries[tid];
+            let target_seq_len = target_lengths[tid];
+
+            let (bbeg, bend) = if rec.strand == '-' {
+                let target_end_pos = target_offset + target_seq_len;
+                (
+                    target_end_pos - rec.target_start,
+                    target_end_pos - rec.target_end,
+                )
+            } else {
+                (target_offset + rec.target_start, target_offset + rec.target_end)
+            };
+
+            segments.push(AlignmentSegment {
+                abeg: query_offset + rec.query_start,
+                aend: query_offset + rec.query_end,
+                bbeg,
+                bend,
+                reverse: rec.strand == '-',
+            });
+        }
 
         Ok(Self {
             query_sequences,

@@ -1,4 +1,5 @@
 mod aln_reader;
+mod paf_reader;
 mod rust_plot;
 mod sequence_filter;
 
@@ -42,6 +43,10 @@ struct Args {
     /// Filter target sequences by range (e.g., "0-5")
     #[clap(long, value_name = "RANGE")]
     target_range: Option<String>,
+
+    /// Treat input file as PAF format instead of .1aln
+    #[clap(long)]
+    from_paf: bool,
 }
 
 fn main() -> Result<(), eframe::Error> {
@@ -76,6 +81,7 @@ fn main() -> Result<(), eframe::Error> {
                 args.stats,
                 &query_filter,
                 &target_filter,
+                args.from_paf,
             ) {
                 Ok(_) => return Ok(()),
                 Err(e) => {
@@ -132,57 +138,89 @@ fn run_cli_mode(
     print_stats: bool,
     query_filter: &SequenceFilter,
     target_filter: &SequenceFilter,
+    from_paf: bool,
 ) -> anyhow::Result<()> {
     use aln_reader::AlnFile;
+    use crate::paf_reader::read_paf_file;
 
-    println!("Reading .1aln file: {}", file.display());
+    if from_paf {
+        println!("Reading PAF file: {}", file.display());
+    } else {
+        println!("Reading .1aln file: {}", file.display());
+    }
 
-    let mut aln_file = AlnFile::open(file)?;
+    // Gather basic info
+    let (query_count, target_count) = if from_paf {
+        let recs = read_paf_file(file)?;
+        use std::collections::HashSet;
+        let q: HashSet<&str> = recs.iter().map(|r| r.query_name.as_str()).collect();
+        let t: HashSet<&str> = recs.iter().map(|r| r.target_name.as_str()).collect();
+        (q.len(), t.len())
+    } else {
+        let aln_file = AlnFile::open(file)?;
+        (aln_file.query_sequences.len(), aln_file.target_sequences.len())
+    };
 
-    println!("Query sequences: {}", aln_file.query_sequences.len());
-    println!("Target sequences: {}", aln_file.target_sequences.len());
+    println!("Query sequences: {}", query_count);
+    println!("Target sequences: {}", target_count);
 
     if print_stats {
         println!("\nReading alignment records...");
-        let records = aln_file.read_all_records()?;
-        println!("Total alignments: {}", records.len());
-
-        if !records.is_empty() {
-            let mut total_identity = 0.0;
-            let mut total_length = 0u64;
-            let mut forward_count = 0;
-            let mut reverse_count = 0;
-
-            for rec in &records {
-                let identity = aln_reader::calculate_identity(rec);
-                let length = (rec.query_end - rec.query_start) as u64;
-                total_identity += identity * length as f64;
-                total_length += length;
-
-                if rec.reverse == 0 {
-                    forward_count += 1;
-                } else {
-                    reverse_count += 1;
+        if from_paf {
+            let records = read_paf_file(file)?;
+            println!("Total alignments: {}", records.len());
+            if !records.is_empty() {
+                let mut matches_sum: i64 = 0;
+                let mut aln_len_sum: i64 = 0;
+                let mut forward_count = 0;
+                let mut reverse_count = 0;
+                for rec in &records {
+                    matches_sum += rec.matches;
+                    aln_len_sum += rec.aln_len;
+                    if rec.strand == '-' { reverse_count += 1; } else { forward_count += 1; }
                 }
+                let avg_identity = if aln_len_sum > 0 {
+                    100.0 * (matches_sum as f64) / (aln_len_sum as f64)
+                } else { 0.0 };
+                println!("\nAlignment Statistics:");
+                println!("  Average identity: {avg_identity:.2}%");
+                println!("  Forward alignments: {forward_count}");
+                println!("  Reverse alignments: {reverse_count}");
+                println!("  Total aligned bases: {aln_len_sum}");
             }
-
-            let avg_identity = if total_length > 0 {
-                total_identity / total_length as f64
-            } else {
-                0.0
-            };
-
-            println!("\nAlignment Statistics:");
-            println!("  Average identity: {avg_identity:.2}%");
-            println!("  Forward alignments: {forward_count}");
-            println!("  Reverse alignments: {reverse_count}");
-            println!("  Total aligned bases: {total_length}");
+        } else {
+            let mut aln_file = AlnFile::open(file)?;
+            let records = aln_file.read_all_records()?;
+            println!("Total alignments: {}", records.len());
+            if !records.is_empty() {
+                let mut total_identity = 0.0;
+                let mut total_length = 0u64;
+                let mut forward_count = 0;
+                let mut reverse_count = 0;
+                for rec in &records {
+                    let identity = aln_reader::calculate_identity(rec);
+                    let length = (rec.query_end - rec.query_start) as u64;
+                    total_identity += identity * length as f64;
+                    total_length += length;
+                    if rec.reverse == 0 { forward_count += 1; } else { reverse_count += 1; }
+                }
+                let avg_identity = if total_length > 0 { total_identity / total_length as f64 } else { 0.0 };
+                println!("\nAlignment Statistics:");
+                println!("  Average identity: {avg_identity:.2}%");
+                println!("  Forward alignments: {forward_count}");
+                println!("  Reverse alignments: {reverse_count}");
+                println!("  Total aligned bases: {total_length}");
+            }
         }
     }
 
     if let Some(output_path) = output_plot {
         println!("\nRendering plot to: {}", output_path.display());
-        let mut plot = RustPlot::from_file(file)?;
+        let mut plot = if from_paf {
+            RustPlot::from_paf(file)?
+        } else {
+            RustPlot::from_file(file)?
+        };
 
         // Apply filters if specified
         if !query_filter.is_empty() || !target_filter.is_empty() {

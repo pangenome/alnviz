@@ -91,15 +91,14 @@ alnviz reads `.1aln` files produced by [FASTGA](https://github.com/thegenemyers/
 - Sequence identifiers and names
 - Alignment quality metrics
 
-### TODO: PAF Support
+### PAF Support
 
-Direct PAF input is planned using `fastga-rs` conversion:
+You can load PAF files directly using the `--from-paf` flag:
 ```bash
-# Planned feature - convert PAF to .1aln on-the-fly
 alnviz --from-paf alignment.paf
 ```
 
-This will use the `fastga-rs` library to convert PAF format alignments to temporary .1aln files for visualization.
+PAF fields are parsed per the minimap2 spec. Identity in `--stats` mode is computed as total_matches / total_aligned_length.
 
 ## Technical Details
 

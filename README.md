@@ -93,11 +93,12 @@ alnviz reads `.1aln` files produced by [FASTGA](https://github.com/thegenemyers/
 
 ### PAF Support
 
-You can load PAF files directly using the `--from-paf` flag (auto-detected by `.paf` or `.paf.gz` extension too):
+You can load PAF files directly using the `--from-paf` flag (auto-detected by `.paf`, `.paf.gz`, `.paf.bgz`, or `.paf.bgzf` extension too). BGZIP/BGZF streams are supported via multi-member gzip decoding:
 ```bash
 alnviz --from-paf alignment.paf
-# or compressed
+# or compressed (gz or bgz/bgzf)
 alnviz --from-paf alignment.paf.gz
+alnviz --from-paf alignment.paf.bgz
 ```
 
 PAF fields are parsed per the minimap2 spec. Identity in `--stats` mode is computed as total_matches / total_aligned_length.

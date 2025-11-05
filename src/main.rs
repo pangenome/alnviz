@@ -150,7 +150,9 @@ fn run_cli_mode(
         .and_then(|e| e.to_str())
         .map(|e| e.eq_ignore_ascii_case("paf"))
         .unwrap_or(false)
-        || path_str.ends_with(".paf.gz");
+        || path_str.ends_with(".paf.gz")
+        || path_str.ends_with(".paf.bgz")
+        || path_str.ends_with(".paf.bgzf");
     let use_paf = from_paf || auto_paf;
 
     if use_paf {
@@ -1154,7 +1156,7 @@ impl AlnViewApp {
 impl AlnViewApp {
     fn open_file_dialog(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
-            .add_filter("Alignment Files", &["1aln", "paf", "gz"])
+            .add_filter("Alignment Files", &["1aln", "paf", "gz", "bgz", "bgzf"])
             .add_filter("All Files", &["*"])
             .pick_file()
         {
@@ -1191,9 +1193,11 @@ impl AlnViewApp {
                 .and_then(|e| e.to_str())
                 .map(|e| e.eq_ignore_ascii_case("paf"))
                 .unwrap_or(false)
-                || path_str.ends_with(".paf.gz");
+                || path_str.ends_with(".paf.gz")
+                || path_str.ends_with(".paf.bgz")
+                || path_str.ends_with(".paf.bgzf");
 
-            if !is_paf && !path_str.ends_with(".gz") {
+            if !is_paf && !(path_str.ends_with(".gz") || path_str.ends_with(".bgz") || path_str.ends_with(".bgzf")) {
                 // Try content sniffing: PAF has >=12 tab-separated fields, 5th col '+' or '-'
                 use std::io::{BufRead, BufReader};
                 if let Ok(file) = std::fs::File::open(&path) {

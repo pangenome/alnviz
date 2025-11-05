@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
@@ -26,13 +26,12 @@ pub fn read_paf_file<P: AsRef<Path>>(path: P) -> Result<Vec<PafRecord>> {
 
     // Choose reader: plain text or gzipped
     let file = File::open(path).with_context(|| format!("Failed to open PAF file: {}", path.display()))?;
-    let is_gz = path
-        .to_string_lossy()
-        .to_ascii_lowercase()
-        .ends_with(".gz");
+    let lower = path.to_string_lossy().to_ascii_lowercase();
+    let is_bgzip = lower.ends_with(".gz") || lower.ends_with(".bgz") || lower.ends_with(".bgzf");
 
-    if is_gz {
-        let gz = GzDecoder::new(file);
+    if is_bgzip {
+        // MultiGzDecoder supports concatenated gzip members (BGZF/BGZIP-compatible)
+        let gz = MultiGzDecoder::new(file);
         let reader = BufReader::new(gz);
         parse_paf_from_reader(reader, &mut records)?;
     } else {

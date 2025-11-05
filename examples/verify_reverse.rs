@@ -1,4 +1,4 @@
-use alnview::rust_plot::RustPlot;
+use alnviz::rust_plot::RustPlot;
 
 fn main() -> anyhow::Result<()> {
     let plot = RustPlot::from_file("/home/erik/sweepga/test.1aln")?;

@@ -27,7 +27,7 @@ cargo run
 
 # Release build (optimized)
 cargo build --release
-./target/release/alnview
+./target/release/alnviz
 
 # With ASAN (address sanitizer for bug hunting)
 ASAN=1 cargo build
@@ -39,7 +39,7 @@ ASAN_OPTIONS=detect_leaks=1 cargo run
 ### Project Structure
 
 ```
-alnview/
+alnviz/
 ├── Cargo.toml       # Rust dependencies
 ├── build.rs         # Compiles C code
 ├── src/
@@ -109,9 +109,9 @@ RUST_LOG=debug cargo run
 ### GDB/LLDB
 
 ```bash
-rust-gdb ./target/debug/alnview
+rust-gdb ./target/debug/alnviz
 # or
-rust-lldb ./target/debug/alnview
+rust-lldb ./target/debug/alnviz
 ```
 
 ## Differences from Qt Version

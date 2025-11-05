@@ -30,7 +30,7 @@ cd alnviz
 cargo build --release
 ```
 
-The binary will be available at `target/release/alnview`.
+The binary will be available at `target/release/alnviz`.
 
 ### Requirements
 
@@ -46,10 +46,10 @@ The binary will be available at `target/release/alnview`.
 
 ```bash
 # Open GUI and select file
-alnview
+alnviz
 
 # Load file at startup
-alnview alignment.1aln
+alnviz alignment.1aln
 ```
 
 **Controls:**
@@ -63,23 +63,23 @@ alnview alignment.1aln
 
 **Print alignment statistics:**
 ```bash
-alnview alignment.1aln --stats
+alnviz alignment.1aln --stats
 ```
 
 **Generate PNG plot:**
 ```bash
-alnview alignment.1aln --plot output.png
+alnviz alignment.1aln --plot output.png
 ```
 
 **Filter by sequence:**
 ```bash
 # By name or prefix
-alnview alignment.1aln --plot filtered.png \
+alnviz alignment.1aln --plot filtered.png \
   --query-filter "chr1,chr2" \
   --target-filter "scaffold"
 
 # By index range
-alnview alignment.1aln --plot subset.png \
+alnviz alignment.1aln --plot subset.png \
   --query-range "0-5" \
   --target-range "10-20"
 ```
@@ -96,7 +96,7 @@ alnviz reads `.1aln` files produced by [FASTGA](https://github.com/thegenemyers/
 Direct PAF input is planned using `fastga-rs` conversion:
 ```bash
 # Planned feature - convert PAF to .1aln on-the-fly
-alnview --from-paf alignment.paf
+alnviz --from-paf alignment.paf
 ```
 
 This will use the `fastga-rs` library to convert PAF format alignments to temporary .1aln files for visualization.

@@ -6,7 +6,7 @@ set -e
 TEST_FILE="/home/erik/human/h.51.1aln"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  ALNview File Loading Test"
+echo "  ALNviz File Loading Test"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "File: $TEST_FILE"
@@ -23,7 +23,7 @@ echo "🔍 Test 1: GDB Stack Trace"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 timeout 5 gdb -batch -ex "run" -ex "bt" -ex "quit" \
-    --args target/debug/alnview 2>&1 | grep -A 20 "Program received" || echo "No crash in GDB (needs manual load)"
+    --args target/debug/alnviz 2>&1 | grep -A 20 "Program received" || echo "No crash in GDB (needs manual load)"
 
 echo ""
 
@@ -31,7 +31,7 @@ echo ""
 echo "🔍 Test 2: Valgrind"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-timeout 10 valgrind --leak-check=no target/debug/alnview 2>&1 | grep -E "(SIGSEGV|FPE|Invalid)" | head -10 || echo "Valgrind: No issues detected (or needs manual file load)"
+timeout 10 valgrind --leak-check=no target/debug/alnviz 2>&1 | grep -E "(SIGSEGV|FPE|Invalid)" | head -10 || echo "Valgrind: No issues detected (or needs manual file load)"
 
 echo ""
 
@@ -94,7 +94,7 @@ echo "  Test Complete"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "💡 To debug manually:"
-echo "   gdb target/debug/alnview"
+echo "   gdb target/debug/alnviz"
 echo "   > run"
 echo "   > (click Open, select file)"
 echo "   > bt  (when it crashes)"

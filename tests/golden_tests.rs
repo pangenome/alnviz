@@ -15,7 +15,7 @@ fn test_render_test_1aln_matches_golden() {
     let output_path = PathBuf::from("/tmp/test_render.png");
     let golden_path = PathBuf::from("tests/golden/test.1aln.png");
 
-    // Run alnview to render the plot
+    // Run alnviz to render the plot
     let status = Command::new("cargo")
         .args(&[
             "run",
@@ -26,9 +26,9 @@ fn test_render_test_1aln_matches_golden() {
             output_path.to_str().unwrap(),
         ])
         .status()
-        .expect("Failed to run alnview");
+        .expect("Failed to run alnviz");
 
-    assert!(status.success(), "alnview command failed");
+    assert!(status.success(), "alnviz command failed");
     assert!(output_path.exists(), "Output PNG was not created");
 
     // Check if golden file exists

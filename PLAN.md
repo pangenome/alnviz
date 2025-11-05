@@ -166,7 +166,7 @@ Find and document all buffer overflows and memory issues in C code.
 ```bash
 cargo build
 valgrind --leak-check=full --track-origins=yes \
-  target/debug/alnview test.1aln
+  target/debug/alnviz test.1aln
 ```
 
 ### Deliverable
@@ -544,7 +544,7 @@ cargo run
 **Release:**
 ```bash
 cargo build --release
-strip target/release/alnview  # Reduce size
+strip target/release/alnviz  # Reduce size
 ```
 
 **Testing:**
@@ -558,7 +558,7 @@ cargo test --release  # Faster tests
 ## File Organization (Final State)
 
 ```
-alnview/
+alnviz/
 ├── Cargo.toml
 ├── build.rs                # Only if keeping C code temporarily
 ├── src/

@@ -68,11 +68,11 @@
 
 ```bash
 $ cargo build
-   Compiling alnview v0.1.0
+   Compiling alnviz v0.1.0
     Finished `dev` profile in 12.47s
 ```
 
-**Binary**: `target/debug/alnview` (335MB with debug symbols)
+**Binary**: `target/debug/alnviz` (335MB with debug symbols)
 
 ### Warnings Found (Good!)
 The C compiler found several potential bugs:
@@ -87,7 +87,7 @@ The C compiler found several potential bugs:
 ## File Structure
 
 ```
-alnview/
+alnviz/
 ├── Cargo.toml          # Rust dependencies
 ├── build.rs            # C compilation config
 ├── .gitignore          # Rust artifacts

@@ -186,7 +186,7 @@ Document all buffer overflows for porting
 ## Files Created
 
 ```
-alnview/
+alnviz/
 ├── Cargo.toml
 ├── build.rs
 ├── .gitignore
@@ -307,4 +307,3 @@ Next milestone: Get actual rendering working.
 ---
 
 **This was a productive session!** 🎉🦀
-

@@ -1,5 +1,5 @@
 [package]
-name = "alnview"
+name = "alnviz"
 version = "0.1.0"
 edition = "2021"
 authors = ["Erik Garrison"]

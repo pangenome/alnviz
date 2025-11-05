@@ -1,4 +1,4 @@
-use alnview::rust_plot::RustPlot;
+use alnviz::rust_plot::RustPlot;
 use std::env;
 
 fn main() -> anyhow::Result<()> {

@@ -93,9 +93,11 @@ alnviz reads `.1aln` files produced by [FASTGA](https://github.com/thegenemyers/
 
 ### PAF Support
 
-You can load PAF files directly using the `--from-paf` flag (auto-detected by `.paf` extension too):
+You can load PAF files directly using the `--from-paf` flag (auto-detected by `.paf` or `.paf.gz` extension too):
 ```bash
 alnviz --from-paf alignment.paf
+# or compressed
+alnviz --from-paf alignment.paf.gz
 ```
 
 PAF fields are parsed per the minimap2 spec. Identity in `--stats` mode is computed as total_matches / total_aligned_length.

@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
+use flate2::read::GzDecoder;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -21,11 +22,30 @@ pub struct PafRecord {
 /// Parse a PAF file (minimap2 format) into records.
 pub fn read_paf_file<P: AsRef<Path>>(path: P) -> Result<Vec<PafRecord>> {
     let path = path.as_ref();
-    let file = File::open(path).with_context(|| format!("Failed to open PAF file: {}", path.display()))?;
-    let reader = BufReader::new(file);
-
     let mut records = Vec::new();
-    for (lineno, line_res) in reader.lines().enumerate() {
+
+    // Choose reader: plain text or gzipped
+    let file = File::open(path).with_context(|| format!("Failed to open PAF file: {}", path.display()))?;
+    let is_gz = path
+        .to_string_lossy()
+        .to_ascii_lowercase()
+        .ends_with(".gz");
+
+    if is_gz {
+        let gz = GzDecoder::new(file);
+        let reader = BufReader::new(gz);
+        parse_paf_from_reader(reader, &mut records)?;
+    } else {
+        let reader = BufReader::new(file);
+        parse_paf_from_reader(reader, &mut records)?;
+    }
+
+    Ok(records)
+}
+
+fn parse_paf_from_reader<R: Read>(reader: R, out: &mut Vec<PafRecord>) -> Result<()> {
+    let mut reader = BufReader::new(reader);
+    for (lineno, line_res) in reader.by_ref().lines().enumerate() {
         let line = line_res.with_context(|| format!("Failed to read line {}", lineno + 1))?;
         if line.trim().is_empty() || line.starts_with('#') {
             continue;
@@ -49,7 +69,7 @@ pub fn read_paf_file<P: AsRef<Path>>(path: P) -> Result<Vec<PafRecord>> {
         let matches: i64 = cols[9].parse().with_context(|| format!("line {}: matches", lineno + 1))?;
         let aln_len: i64 = cols[10].parse().with_context(|| format!("line {}: aln_len", lineno + 1))?;
 
-        records.push(PafRecord {
+        out.push(PafRecord {
             query_name: qname,
             query_len: qlen,
             query_start: qstart,
@@ -64,6 +84,5 @@ pub fn read_paf_file<P: AsRef<Path>>(path: P) -> Result<Vec<PafRecord>> {
         });
     }
 
-    Ok(records)
+    Ok(())
 }
-

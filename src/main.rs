@@ -878,54 +878,76 @@ impl AlnViewApp {
             let view_width = rect.width() as f64 * self.view.scale;
             let view_height = rect.height() as f64 * self.view.scale;
 
+            // Calculate genome boundary positions on screen
+            let alen_screen = genome_to_screen(alen, 0.0).x;
+            let blen_screen = genome_to_screen(0.0, blen).y;
+
             // Draw scaffold boundaries for genome A (vertical dashed gray lines)
+            // Only draw within the genome bounds (don't extend into out-of-bounds areas)
             let scaffolds_a = plot.get_scaffold_boundaries(0);
             for &pos in &scaffolds_a {
                 let x = pos as f64;
                 if x >= self.view.x && x <= self.view.x + view_width {
                     let x_pos = genome_to_screen(x, 0.0).x;
-                    // TODO: egui doesn't support dashed lines yet, using solid gray
+                    // Clip line to only draw within genome bounds
+                    let y_start = rect.min.y.max(blen_screen);
+                    let y_end = rect.max.y;
                     painter.vline(
                         x_pos,
-                        rect.y_range(),
+                        y_start..=y_end,
                         (1.0, egui::Color32::from_rgb(100, 100, 100)),
                     );
                 }
             }
 
             // Draw scaffold boundaries for genome B (horizontal dashed gray lines)
+            // Only draw within the genome bounds (don't extend into out-of-bounds areas)
             let scaffolds_b = plot.get_scaffold_boundaries(1);
             for &pos in &scaffolds_b {
                 let y = pos as f64;
                 if y >= self.view.y && y <= self.view.y + view_height {
                     let y_pos = genome_to_screen(0.0, y).y;
+                    // Clip line to only draw within genome bounds
+                    let x_start = rect.min.x;
+                    let x_end = rect.max.x.min(alen_screen);
                     painter.hline(
-                        rect.x_range(),
+                        x_start..=x_end,
                         y_pos,
                         (1.0, egui::Color32::from_rgb(100, 100, 100)),
                     );
                 }
             }
 
-            // Draw genome end boundaries (thicker)
+            // Draw genome end boundaries with light blue border
+            // Clip to only draw within genome bounds
+            let light_blue = egui::Color32::from_rgb(100, 180, 255);
             if alen >= self.view.x && alen <= self.view.x + view_width {
                 let x_pos = genome_to_screen(alen, 0.0).x;
-                painter.vline(x_pos, rect.y_range(), (2.0, egui::Color32::DARK_RED));
+                let y_start = rect.min.y.max(blen_screen);
+                let y_end = rect.max.y;
+                painter.vline(x_pos, y_start..=y_end, (2.0, light_blue));
             }
 
             if blen >= self.view.y && blen <= self.view.y + view_height {
                 let y_pos = genome_to_screen(0.0, blen).y;
-                painter.hline(rect.x_range(), y_pos, (2.0, egui::Color32::DARK_BLUE));
+                let x_start = rect.min.x;
+                let x_end = rect.max.x.min(alen_screen);
+                painter.hline(x_start..=x_end, y_pos, (2.0, light_blue));
             }
 
             // Draw axes at origin
+            // Clip to only draw within genome bounds
             if self.view.x <= 0.0 && self.view.x + view_width >= 0.0 {
                 let x_pos = genome_to_screen(0.0, 0.0).x;
-                painter.vline(x_pos, rect.y_range(), (1.0, egui::Color32::GRAY));
+                let y_start = rect.min.y.max(blen_screen);
+                let y_end = rect.max.y;
+                painter.vline(x_pos, y_start..=y_end, (1.0, egui::Color32::GRAY));
             }
             if self.view.y <= 0.0 && self.view.y + view_height >= 0.0 {
                 let y_pos = genome_to_screen(0.0, 0.0).y;
-                painter.hline(rect.x_range(), y_pos, (1.0, egui::Color32::GRAY));
+                let x_start = rect.min.x;
+                let x_end = rect.max.x.min(alen_screen);
+                painter.hline(x_start..=x_end, y_pos, (1.0, egui::Color32::GRAY));
             }
         }
 
@@ -1249,10 +1271,10 @@ impl AlnViewApp {
 
 impl AlnViewApp {
     fn fit_view_to_canvas(&mut self, canvas_rect: egui::Rect) {
-        // Calculate scale to fit smaller dimension exactly (user can scroll for the longer one)
+        // Calculate scale to fit both dimensions (entire plot visible, may have margins)
         let scale_x = self.view.max_x / canvas_rect.width() as f64;
         let scale_y = self.view.max_y / canvas_rect.height() as f64;
-        self.view.scale = scale_x.min(scale_y);
+        self.view.scale = scale_x.max(scale_y);
         self.view.x = 0.0;
         self.view.y = 0.0;
     }
@@ -1261,11 +1283,11 @@ impl AlnViewApp {
         // Calculate new scale
         let new_scale = self.view.scale / factor;
 
-        // Don't zoom out beyond where smaller dimension fills the window
+        // Don't zoom out beyond where both dimensions fit in view
         // (higher scale = more zoomed out = more bp per pixel)
         let max_scale_x = self.view.max_x / self.last_canvas_size.0 as f64;
         let max_scale_y = self.view.max_y / self.last_canvas_size.1 as f64;
-        let max_scale = max_scale_x.min(max_scale_y);
+        let max_scale = max_scale_x.max(max_scale_y);
 
         // Apply zoom with limit: don't zoom out too far
         self.view.scale = new_scale.min(max_scale);
@@ -1282,11 +1304,11 @@ impl AlnViewApp {
         // Calculate new scale
         let new_scale = self.view.scale / factor;
 
-        // Don't zoom out beyond where smaller dimension fills the window
+        // Don't zoom out beyond where both dimensions fit in view
         // (higher scale = more zoomed out = more bp per pixel)
         let max_scale_x = self.view.max_x / canvas_rect.width() as f64;
         let max_scale_y = self.view.max_y / canvas_rect.height() as f64;
-        let max_scale = max_scale_x.min(max_scale_y);
+        let max_scale = max_scale_x.max(max_scale_y);
 
         // Apply zoom with limit: don't zoom out too far
         self.view.scale = new_scale.min(max_scale);

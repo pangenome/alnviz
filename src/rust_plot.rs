@@ -116,18 +116,12 @@ impl RustPlot {
                     0
                 };
 
-                // For reverse complement: subtract from END of target sequence (like C code)
-                // C code: bbeg = (offset + seqlen) - rec.target_start
+                // For reverse complement: swap target_start and target_end to create negative slope
+                // This creates the visual flip needed for reverse complement alignments
                 let (bbeg, bend) = if rec.reverse != 0 {
-                    let target_seq_len = if tid < target_lengths.len() {
-                        target_lengths[tid]
-                    } else {
-                        0
-                    };
-                    let target_end_pos = target_offset + target_seq_len;
                     (
-                        target_end_pos - rec.target_start,
-                        target_end_pos - rec.target_end,
+                        target_offset + rec.target_end,
+                        target_offset + rec.target_start,
                     )
                 } else {
                     (
@@ -236,13 +230,13 @@ impl RustPlot {
 
             let query_offset = query_boundaries[qid];
             let target_offset = target_boundaries[tid];
-            let target_seq_len = target_lengths[tid];
 
             let (bbeg, bend) = if rec.strand == '-' {
-                let target_end_pos = target_offset + target_seq_len;
+                // For reverse complement: swap target_start and target_end to create negative slope
+                // PAF coordinates are always in forward orientation; swapping creates the visual flip
                 (
-                    target_end_pos - rec.target_start,
-                    target_end_pos - rec.target_end,
+                    target_offset + rec.target_end,
+                    target_offset + rec.target_start,
                 )
             } else {
                 (target_offset + rec.target_start, target_offset + rec.target_end)

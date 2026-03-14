@@ -92,6 +92,9 @@ fn main() -> Result<(), eframe::Error> {
         }
     }
 
+    // Auto-detect display server if env vars are missing (common in tmux)
+    auto_detect_display();
+
     // GUI mode
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -129,6 +132,34 @@ fn parse_filters(
     }
 
     Ok(filter)
+}
+
+/// Auto-detect display server environment variables if they are not set.
+/// This handles the common case where tmux sessions lose WAYLAND_DISPLAY/DISPLAY.
+fn auto_detect_display() {
+    let has_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+    let has_x11 = std::env::var("DISPLAY").is_ok();
+
+    if has_wayland || has_x11 {
+        return;
+    }
+
+    let uid = unsafe { libc::getuid() };
+    let runtime_dir = std::env::var("XDG_RUNTIME_DIR")
+        .unwrap_or_else(|_| format!("/run/user/{uid}"));
+
+    // Check for Wayland socket
+    let wayland_socket = std::path::Path::new(&runtime_dir).join("wayland-0");
+    if wayland_socket.exists() {
+        eprintln!("Note: WAYLAND_DISPLAY not set, auto-detected wayland-0");
+        std::env::set_var("WAYLAND_DISPLAY", "wayland-0");
+    }
+
+    // Check for Xwayland/Xorg on :0
+    if std::path::Path::new("/tmp/.X11-unix/X0").exists() {
+        eprintln!("Note: DISPLAY not set, auto-detected :0");
+        std::env::set_var("DISPLAY", ":0");
+    }
 }
 
 /// Run CLI mode: read .1aln file and print stats or create plot
